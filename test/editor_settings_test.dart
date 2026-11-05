@@ -6,7 +6,7 @@ import 'package:pdfreor/services/editor_settings_service.dart';
 void main() {
   test('EditorSettings serialization and defaults', () {
     const defaultSettings = EditorSettings();
-    expect(defaultSettings.activeColor, const Color(0xFFFFEB3B));
+    expect(defaultSettings.activeColor, const Color(0xFF212121));
     expect(defaultSettings.activeStrokeWidth, 3.0);
     expect(defaultSettings.activeShape, ShapeType.rectangle);
 
