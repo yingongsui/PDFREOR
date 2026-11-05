@@ -990,7 +990,7 @@ class _EditorPainter extends CustomPainter {
       final paint = Paint()
         ..color = color
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(points.first.offset, baseWidth * points.first.pressure / 2, paint);
+      canvas.drawCircle(points.first.offset, baseWidth / 2, paint);
       return;
     }
 
@@ -1004,7 +1004,14 @@ class _EditorPainter extends CustomPainter {
       final p1 = points[i];
       final p2 = points[i + 1];
       final avgPressure = (p1.pressure + p2.pressure) / 2;
-      paint.strokeWidth = math.max(1.0, baseWidth * avgPressure);
+      // Modulate stroke width smoothly around baseWidth based on stylus pressure.
+      // Active stylus pressure typically ranges between 0.05 and 0.5.
+      // Scaling moderately around baseWidth ensures the toolbar stroke width setting
+      // directly determines the line thickness, while stylus pressure adds natural organic dynamics.
+      final pressureScale = (avgPressure > 0.0 && avgPressure != 1.0)
+          ? (0.75 + 0.5 * avgPressure.clamp(0.0, 1.0))
+          : 1.0;
+      paint.strokeWidth = math.max(0.5, baseWidth * pressureScale);
       canvas.drawLine(p1.offset, p2.offset, paint);
     }
   }

@@ -69,6 +69,62 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                         result.success(false)
                     }
                 }
+                "getStorageVolumes" -> {
+                    try {
+                        val list = mutableListOf<String>()
+                        val sm = getSystemService(Context.STORAGE_SERVICE) as? android.os.storage.StorageManager
+                        if (sm != null) {
+                            for (vol in sm.storageVolumes) {
+                                val state = vol.state
+                                if (state == android.os.Environment.MEDIA_MOUNTED || state == android.os.Environment.MEDIA_MOUNTED_READ_ONLY) {
+                                    var path: String? = null
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                        val dir = vol.directory
+                                        if (dir != null) {
+                                            path = dir.absolutePath
+                                        }
+                                    }
+                                    if (path == null) {
+                                        try {
+                                            val getPath = vol.javaClass.getMethod("getPath")
+                                            path = getPath.invoke(vol) as? String
+                                        } catch (_: Exception) {}
+                                    }
+                                    if (path != null && path.isNotBlank() && !list.contains(path)) {
+                                        list.add(path)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Also check getExternalFilesDirs to catch any secondary storage / SD cards
+                        try {
+                            val extDirs = getExternalFilesDirs(null)
+                            if (extDirs != null) {
+                                for (extFile in extDirs) {
+                                    if (extFile != null) {
+                                        val absPath = extFile.absolutePath
+                                        val idx = absPath.indexOf("/Android/")
+                                        if (idx != -1) {
+                                            val root = absPath.substring(0, idx)
+                                            if (root.isNotBlank() && !list.contains(root)) {
+                                                list.add(root)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        if (list.isEmpty()) {
+                            list.add(android.os.Environment.getExternalStorageDirectory().absolutePath)
+                        }
+                        result.success(list)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error getting storage volumes: $e")
+                        result.success(listOf("/storage/emulated/0"))
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }

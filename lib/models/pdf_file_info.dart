@@ -14,15 +14,21 @@ class PdfFileInfo {
   });
 
   factory PdfFileInfo.fromFile(File file) {
-    final stat = file.statSync();
-    final name = file.uri.pathSegments.isNotEmpty
-        ? file.uri.pathSegments.lastWhere((seg) => seg.isNotEmpty, orElse: () => 'document.pdf')
-        : 'document.pdf';
+    int size = 0;
+    DateTime modified = DateTime.now();
+    try {
+      final stat = file.statSync();
+      size = stat.size;
+      modified = stat.modified;
+    } catch (_) {}
+
+    final segments = file.path.split(Platform.pathSeparator).where((seg) => seg.isNotEmpty);
+    final name = segments.isNotEmpty ? segments.last : 'document.pdf';
     return PdfFileInfo(
       path: file.path,
       name: name,
-      sizeInBytes: stat.size,
-      lastModified: stat.modified,
+      sizeInBytes: size,
+      lastModified: modified,
     );
   }
 

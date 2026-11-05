@@ -28,6 +28,17 @@ enum SortType {
   sizeAsc, // Smallest size first
 }
 
+enum FolderSortType {
+  nameAsc, // Folder name A to Z
+  nameDesc, // Folder name Z to A
+  pathAsc, // Folder path A to Z
+  pathDesc, // Folder path Z to A
+  fileCountDesc, // Most files first
+  fileCountAsc, // Fewest files first
+  dateDesc, // Newest modified PDF first
+  dateAsc, // Oldest modified PDF first
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -47,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   PdfViewMode _viewMode = PdfViewMode.thumbnail;
   SortType _sortType = SortType.dateDesc;
+  FolderSortType _folderSortType = FolderSortType.nameAsc;
 
   final Set<String> _collapsedFolders = {};
   bool _isSearching = false;
@@ -57,9 +69,44 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPreferences();
     PdfTabManager.instance.init();
     PdfTabManager.instance.addListener(_onTabStateChanged);
     _checkPermissionAndScan();
+  }
+
+  Future<void> _loadPreferences() async {
+    try {
+      final collapsed = await _scannerService.getCollapsedFolders();
+      final folderSortStr = await _scannerService.getFolderSort();
+      final fileSortStr = await _scannerService.getFileSort();
+
+      FolderSortType fSort = FolderSortType.nameAsc;
+      for (final v in FolderSortType.values) {
+        if (v.name == folderSortStr) {
+          fSort = v;
+          break;
+        }
+      }
+
+      SortType sSort = SortType.dateDesc;
+      for (final v in SortType.values) {
+        if (v.name == fileSortStr) {
+          sSort = v;
+          break;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _collapsedFolders.clear();
+          _collapsedFolders.addAll(collapsed);
+          _folderSortType = fSort;
+          _sortType = sSort;
+          _applyFilterAndSort();
+        });
+      }
+    } catch (_) {}
   }
 
   void _onTabStateChanged() {
@@ -154,7 +201,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _applyFilterAndSort();
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Scan error: $e\n$stack');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -207,6 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _importFiles() async {
     final files = await _scannerService.pickPdfFiles();
     if (files.isNotEmpty) {
+      await _scannerService.addImportedFilePaths(files.map((f) => f.path));
       setState(() {
         final existingPaths = _allFiles.map((f) => f.path).toSet();
         for (final f in files) {
@@ -222,6 +271,70 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+  }
+
+  void _showAddOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.note_add_rounded, color: theme.colorScheme.primary),
+                  ),
+                  title: const Text('Add PDF Files'),
+                  subtitle: const Text('Pick one or more PDF files to add to library'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _importFiles();
+                  },
+                ),
+                const SizedBox(height: 6),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.create_new_folder_rounded, color: theme.colorScheme.secondary),
+                  ),
+                  title: const Text('Add Folder'),
+                  subtitle: const Text('Scan and add all PDFs from a folder or SD card directory'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pickAndScanDirectory();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _applyFilterAndSort() {
@@ -662,6 +775,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (await f.exists()) {
         await f.delete();
       }
+      await _scannerService.removeImportedFilePath(file.path);
       PdfTabManager.instance.closeTabByPath(file.path);
       PdfThumbnailService.instance.invalidate(file.path);
       setState(() {
@@ -718,10 +832,76 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  PopupMenuItem<SortType> _buildSortMenuItem(SortType type, IconData icon, String text) {
-    final isSelected = _sortType == type;
+  void _setFolderSort(FolderSortType type) {
+    setState(() {
+      _folderSortType = type;
+    });
+    _scannerService.setFolderSort(type.name);
+  }
+
+  void _setFileSort(SortType type) {
+    setState(() {
+      _sortType = type;
+      _applyFilterAndSort();
+    });
+    _scannerService.setFileSort(type.name);
+  }
+
+  void _toggleFolderCollapse(String folderPath) {
+    setState(() {
+      final willCollapse = !_collapsedFolders.contains(folderPath);
+      if (willCollapse) {
+        _collapsedFolders.add(folderPath);
+      } else {
+        _collapsedFolders.remove(folderPath);
+      }
+      _scannerService.setFolderCollapsed(folderPath, willCollapse);
+    });
+  }
+
+  void _toggleAllFolders(List<String> allFolders) {
+    if (allFolders.isEmpty) return;
+    final allCollapsed = allFolders.every((f) => _collapsedFolders.contains(f));
+    setState(() {
+      if (allCollapsed) {
+        _collapsedFolders.removeAll(allFolders);
+        _scannerService.setAllFoldersCollapsed(allFolders, false);
+      } else {
+        _collapsedFolders.addAll(allFolders);
+        _scannerService.setAllFoldersCollapsed(allFolders, true);
+      }
+    });
+  }
+
+  String _getFolderSortLabel(FolderSortType type) {
+    switch (type) {
+      case FolderSortType.nameAsc:
+        return 'Folder A-Z';
+      case FolderSortType.nameDesc:
+        return 'Folder Z-A';
+      case FolderSortType.pathAsc:
+        return 'Path A-Z';
+      case FolderSortType.pathDesc:
+        return 'Path Z-A';
+      case FolderSortType.fileCountDesc:
+        return 'Most Files';
+      case FolderSortType.fileCountAsc:
+        return 'Fewest Files';
+      case FolderSortType.dateDesc:
+        return 'Newest Date';
+      case FolderSortType.dateAsc:
+        return 'Oldest Date';
+    }
+  }
+
+  PopupMenuItem<FolderSortType> _buildFolderSortMenuItem(
+    FolderSortType type,
+    IconData icon,
+    String text,
+  ) {
+    final isSelected = _folderSortType == type;
     final theme = Theme.of(context);
-    return PopupMenuItem<SortType>(
+    return PopupMenuItem<FolderSortType>(
       value: type,
       child: Row(
         children: [
@@ -745,6 +925,315 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(Icons.check_rounded, size: 18, color: theme.colorScheme.primary),
         ],
       ),
+    );
+  }
+
+  Widget _buildSortChip<T>({
+    required T current,
+    required T target,
+    required String label,
+    required IconData icon,
+    required ValueChanged<T> onSelected,
+    required ThemeData theme,
+  }) {
+    final isSelected = current == target;
+    return ChoiceChip(
+      selected: isSelected,
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurfaceVariant,
+      ),
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+      ),
+      selectedColor: theme.colorScheme.primary,
+      onSelected: (_) => onSelected(target),
+    );
+  }
+
+  void _showSortOptionsSheet() {
+    final theme = Theme.of(context);
+    final allFolderPaths = _sortedGroupedEntries.map((e) => e.key).toList();
+    final allCollapsed = allFolderPaths.isNotEmpty &&
+        allFolderPaths.every((p) => _collapsedFolders.contains(p));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Icon(Icons.tune_rounded, color: theme.colorScheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Sort & Organization',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Quick Folder Actions
+                    if (allFolderPaths.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                _toggleAllFolders(allFolderPaths);
+                                setSheetState(() {});
+                              },
+                              icon: Icon(
+                                allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+                                size: 18,
+                              ),
+                              label: Text(allCollapsed ? 'Expand All Folders' : 'Collapse All Folders'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    // Folder Sorting Header
+                    Row(
+                      children: [
+                        Icon(Icons.folder_rounded, size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'FOLDER SORTING',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.nameAsc,
+                          label: 'Name: A to Z',
+                          icon: Icons.sort_by_alpha_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.nameDesc,
+                          label: 'Name: Z to A',
+                          icon: Icons.sort_by_alpha_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.pathAsc,
+                          label: 'Path: A to Z',
+                          icon: Icons.folder_open_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.pathDesc,
+                          label: 'Path: Z to A',
+                          icon: Icons.folder_open_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.fileCountDesc,
+                          label: 'Files: Most First',
+                          icon: Icons.format_list_numbered_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.fileCountAsc,
+                          label: 'Files: Fewest First',
+                          icon: Icons.format_list_numbered_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.dateDesc,
+                          label: 'Date: Newest First',
+                          icon: Icons.calendar_today_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<FolderSortType>(
+                          current: _folderSortType,
+                          target: FolderSortType.dateAsc,
+                          label: 'Date: Oldest First',
+                          icon: Icons.history_rounded,
+                          onSelected: (val) {
+                            _setFolderSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // File Sorting Header
+                    Row(
+                      children: [
+                        Icon(Icons.description_rounded, size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'FILE SORTING',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.dateDesc,
+                          label: 'Date: Newest First',
+                          icon: Icons.calendar_today_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.dateAsc,
+                          label: 'Date: Oldest First',
+                          icon: Icons.history_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.nameAsc,
+                          label: 'Name: A to Z',
+                          icon: Icons.sort_by_alpha_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.nameDesc,
+                          label: 'Name: Z to A',
+                          icon: Icons.sort_by_alpha_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.sizeDesc,
+                          label: 'Size: Largest First',
+                          icon: Icons.storage_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                        _buildSortChip<SortType>(
+                          current: _sortType,
+                          target: SortType.sizeAsc,
+                          label: 'Size: Smallest First',
+                          icon: Icons.data_usage_rounded,
+                          onSelected: (val) {
+                            _setFileSort(val);
+                            setSheetState(() {});
+                          },
+                          theme: theme,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -837,30 +1326,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           // Sort Menu
-          PopupMenuButton<SortType>(
+          IconButton(
             icon: const Icon(Icons.sort_rounded),
             tooltip: 'Sort Options',
-            offset: const Offset(0, 48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            initialValue: _sortType,
-            onSelected: (val) {
-              setState(() {
-                _sortType = val;
-                _applyFilterAndSort();
-              });
-            },
-            itemBuilder: (context) => [
-              _buildSortMenuItem(SortType.dateDesc, Icons.calendar_today_rounded, 'Date: Newest First'),
-              _buildSortMenuItem(SortType.dateAsc, Icons.history_rounded, 'Date: Oldest First'),
-              const PopupMenuDivider(),
-              _buildSortMenuItem(SortType.nameAsc, Icons.sort_by_alpha_rounded, 'Name: A to Z'),
-              _buildSortMenuItem(SortType.nameDesc, Icons.sort_by_alpha_rounded, 'Name: Z to A'),
-              const PopupMenuDivider(),
-              _buildSortMenuItem(SortType.sizeDesc, Icons.storage_rounded, 'Size: Largest First'),
-              _buildSortMenuItem(SortType.sizeAsc, Icons.data_usage_rounded, 'Size: Smallest First'),
-            ],
+            onPressed: _showSortOptionsSheet,
           ),
 
           // Settings Button
@@ -1081,14 +1550,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _importFiles,
+        onPressed: _showAddOptions,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add PDF'),
       ),
     );
   }
 
-  Map<String, List<PdfFileInfo>> get _groupedFiles {
+  List<MapEntry<String, List<PdfFileInfo>>> get _sortedGroupedEntries {
     final Map<String, List<PdfFileInfo>> groups = {};
     for (final file in _filteredFiles) {
       final folder = file.parentDirectoryPath.isNotEmpty
@@ -1096,7 +1565,182 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'Root Directory';
       groups.putIfAbsent(folder, () => []).add(file);
     }
-    return groups;
+
+    final entries = groups.entries.toList();
+
+    String getFolderName(String folderPath) {
+      final segments = folderPath.split(Platform.pathSeparator).where((s) => s.isNotEmpty).toList();
+      return segments.isNotEmpty ? segments.last.toLowerCase() : folderPath.toLowerCase();
+    }
+
+    DateTime getLatestDate(List<PdfFileInfo> files) {
+      if (files.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+      return files.map((f) => f.lastModified).reduce((a, b) => a.isAfter(b) ? a : b);
+    }
+
+    switch (_folderSortType) {
+      case FolderSortType.nameAsc:
+        entries.sort((a, b) => getFolderName(a.key).compareTo(getFolderName(b.key)));
+        break;
+      case FolderSortType.nameDesc:
+        entries.sort((a, b) => getFolderName(b.key).compareTo(getFolderName(a.key)));
+        break;
+      case FolderSortType.pathAsc:
+        entries.sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+        break;
+      case FolderSortType.pathDesc:
+        entries.sort((a, b) => b.key.toLowerCase().compareTo(a.key.toLowerCase()));
+        break;
+      case FolderSortType.fileCountDesc:
+        entries.sort((a, b) {
+          final cmp = b.value.length.compareTo(a.value.length);
+          return cmp != 0 ? cmp : getFolderName(a.key).compareTo(getFolderName(b.key));
+        });
+        break;
+      case FolderSortType.fileCountAsc:
+        entries.sort((a, b) {
+          final cmp = a.value.length.compareTo(b.value.length);
+          return cmp != 0 ? cmp : getFolderName(a.key).compareTo(getFolderName(b.key));
+        });
+        break;
+      case FolderSortType.dateDesc:
+        entries.sort((a, b) {
+          final cmp = getLatestDate(b.value).compareTo(getLatestDate(a.value));
+          return cmp != 0 ? cmp : getFolderName(a.key).compareTo(getFolderName(b.key));
+        });
+        break;
+      case FolderSortType.dateAsc:
+        entries.sort((a, b) {
+          final cmp = getLatestDate(a.value).compareTo(getLatestDate(b.value));
+          return cmp != 0 ? cmp : getFolderName(a.key).compareTo(getFolderName(b.key));
+        });
+        break;
+    }
+
+    return entries;
+  }
+
+  Widget _buildFoldersHeaderBar(
+    List<MapEntry<String, List<PdfFileInfo>>> groupedEntries,
+    ThemeData theme,
+  ) {
+    final allFolderPaths = groupedEntries.map((e) => e.key).toList();
+    final allCollapsed = allFolderPaths.isNotEmpty &&
+        allFolderPaths.every((p) => _collapsedFolders.contains(p));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.folder_copy_rounded,
+            size: 16,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${groupedEntries.length} ${groupedEntries.length == 1 ? 'Folder' : 'Folders'} • ${_filteredFiles.length} PDFs',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          // Folder Sort Quick Menu Button
+          PopupMenuButton<FolderSortType>(
+            tooltip: 'Folder Sort',
+            offset: const Offset(0, 36),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            initialValue: _folderSortType,
+            onSelected: _setFolderSort,
+            itemBuilder: (context) => [
+              _buildFolderSortMenuItem(FolderSortType.nameAsc, Icons.sort_by_alpha_rounded, 'Folder: A to Z'),
+              _buildFolderSortMenuItem(FolderSortType.nameDesc, Icons.sort_by_alpha_rounded, 'Folder: Z to A'),
+              const PopupMenuDivider(),
+              _buildFolderSortMenuItem(FolderSortType.pathAsc, Icons.folder_open_rounded, 'Path: A to Z'),
+              _buildFolderSortMenuItem(FolderSortType.pathDesc, Icons.folder_open_rounded, 'Path: Z to A'),
+              const PopupMenuDivider(),
+              _buildFolderSortMenuItem(FolderSortType.fileCountDesc, Icons.format_list_numbered_rounded, 'Files: Most First'),
+              _buildFolderSortMenuItem(FolderSortType.fileCountAsc, Icons.format_list_numbered_rounded, 'Files: Fewest First'),
+              const PopupMenuDivider(),
+              _buildFolderSortMenuItem(FolderSortType.dateDesc, Icons.calendar_today_rounded, 'Date: Newest First'),
+              _buildFolderSortMenuItem(FolderSortType.dateAsc, Icons.history_rounded, 'Date: Oldest First'),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sort_rounded,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _getFolderSortLabel(_folderSortType),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.arrow_drop_down_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Collapse All / Expand All Toggle
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _toggleAllFolders(allFolderPaths),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    allCollapsed ? 'Expand All' : 'Collapse All',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFolderBanner(
@@ -1115,15 +1759,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            setState(() {
-              if (isCollapsed) {
-                _collapsedFolders.remove(folderPath);
-              } else {
-                _collapsedFolders.add(folderPath);
-              }
-            });
-          },
+          onTap: () => _toggleFolderCollapse(folderPath),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -1280,11 +1916,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final grouped = _groupedFiles;
+    final groupedEntries = _sortedGroupedEntries;
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        for (final entry in grouped.entries) ...[
+        if (groupedEntries.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _buildFoldersHeaderBar(groupedEntries, theme),
+          ),
+        for (final entry in groupedEntries) ...[
           SliverToBoxAdapter(
             child: _buildFolderBanner(entry.key, entry.value, theme),
           ),
