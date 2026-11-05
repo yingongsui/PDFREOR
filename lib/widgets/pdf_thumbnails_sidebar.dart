@@ -51,7 +51,11 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final screenSize = MediaQuery.of(context).size;
-    final sidebarWidth = math.min(340.0, screenSize.width * 0.45);
+    final isTablet = screenSize.shortestSide >= 600;
+    final sidebarWidth = isTablet
+        ? math.min(340.0, screenSize.width * 0.45)
+        : math.min(240.0, screenSize.width * 0.70);
+    final crossAxisCount = isTablet ? 2 : 1;
 
     return Container(
       width: sidebarWidth,
@@ -122,8 +126,8 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
               child: GridView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 12,
                   childAspectRatio: 0.72,
