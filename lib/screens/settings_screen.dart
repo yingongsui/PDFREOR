@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
 import '../services/pdf_scanner_service.dart';
 import '../services/pdf_thumbnail_service.dart';
@@ -376,15 +377,24 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        child: Icon(
-                          Icons.picture_as_pdf_rounded,
-                          color: theme.colorScheme.primary,
-                          size: 32,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.asset(
+                            'assets/app_icon.png',
+                            width: 52,
+                            height: 52,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -418,6 +428,69 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       fontSize: 13.5,
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Material(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _openGitHubUrl(context),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.code_rounded,
+                              color: theme.colorScheme.primary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'GitHub Repository',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'https://github.com/yingongsui/PDFREOR',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.primary,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_rounded, size: 18),
+                              tooltip: 'Copy link',
+                              onPressed: () {
+                                Clipboard.setData(
+                                  const ClipboardData(text: 'https://github.com/yingongsui/PDFREOR'),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('GitHub link copied to clipboard'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Icon(Icons.open_in_new_rounded, size: 18),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -471,5 +544,26 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         ],
       ),
     );
+  }
+
+  Future<void> _openGitHubUrl(BuildContext context) async {
+    const url = 'https://github.com/yingongsui/PDFREOR';
+    try {
+      const channel = MethodChannel('com.yin.pdfreor/stylus');
+      final success = await channel.invokeMethod<bool>('openUrl', {'url': url});
+      if (success != true) {
+        await Clipboard.setData(const ClipboardData(text: url));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GitHub link copied to clipboard')),
+        );
+      }
+    } catch (_) {
+      await Clipboard.setData(const ClipboardData(text: url));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('GitHub link copied to clipboard')),
+      );
+    }
   }
 }
