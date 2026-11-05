@@ -54,7 +54,7 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
     final isTablet = screenSize.shortestSide >= 600;
     final sidebarWidth = isTablet
         ? math.min(340.0, screenSize.width * 0.45)
-        : math.min(240.0, screenSize.width * 0.70);
+        : math.min(136.0, screenSize.width * 0.38);
     final crossAxisCount = isTablet ? 2 : 1;
 
     return Container(
@@ -76,24 +76,29 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? 14 : 8,
+                vertical: 10,
+              ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.auto_stories_rounded,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Thumbnails',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
+                  if (isTablet) ...[
+                    Icon(
+                      Icons.auto_stories_rounded,
+                      size: 20,
+                      color: theme.colorScheme.primary,
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Thumbnails',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -101,7 +106,7 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '${widget.totalPages}',
+                      isTablet ? '${widget.totalPages}' : '${widget.totalPages}P',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -114,6 +119,8 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
                     icon: const Icon(Icons.close_rounded, size: 20),
                     tooltip: 'Close',
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: widget.onClose,
                   ),
                 ],
@@ -125,11 +132,11 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
             Expanded(
               child: GridView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(isTablet ? 12 : 8),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 12,
+                  crossAxisSpacing: isTablet ? 10 : 8,
+                  mainAxisSpacing: isTablet ? 12 : 10,
                   childAspectRatio: 0.72,
                 ),
                 itemCount: widget.totalPages,
