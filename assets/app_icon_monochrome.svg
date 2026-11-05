@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Core Graphic Scaled to 70% of previous (0.833 * 0.7 ≈ 0.583) to ensure full visibility within adaptive icon safe zone -->
+  <g transform="translate(256, 256) scale(0.583) translate(-256, -256)">
+    <!-- Notebook Frame Group -->
+    <g>
+      <!-- Notebook Body Outer Page -->
+      <rect x="80" y="36" width="366" height="440" rx="32" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-opacity="1.0" />
+
+      <!-- Notebook Spine / Binding Divider Line -->
+      <line x1="126" y1="40" x2="126" y2="472" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.6" />
+
+      <!-- Notebook Ring Binders -->
+      <g fill="#000000" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round">
+        <rect x="68" y="75" width="28" height="12" rx="6" />
+        <rect x="68" y="125" width="28" height="12" rx="6" />
+        <rect x="68" y="175" width="28" height="12" rx="6" />
+        <rect x="68" y="225" width="28" height="12" rx="6" />
+        <rect x="68" y="275" width="28" height="12" rx="6" />
+        <rect x="68" y="325" width="28" height="12" rx="6" />
+        <rect x="68" y="375" width="28" height="12" rx="6" />
+        <rect x="68" y="425" width="28" height="12" rx="6" />
+      </g>
+    </g>
+
+    <!-- Waveform Line -->
+    <path d="M 185 348 C 215 390, 245 320, 275 350 C 305 380, 325 330, 350 355 C 370 375, 385 360, 400 365" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Pen Body Group -->
+    <g transform="translate(260, 240) rotate(-35) translate(-260, -240)">
+      <!-- Eraser -->
+      <path d="M 238 120 
+           L 238 92 
+           C 238 78, 282 78, 282 92 
+           L 282 120 
+           Z" fill="#FFFFFF" fill-opacity="0.5" stroke="#FFFFFF" stroke-width="7" stroke-linejoin="round" />
+
+      <!-- Pen Tip Cone -->
+      <path d="M 238 320 L 282 320 L 260 365 Z" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linejoin="round" />
+
+      <!-- Pen Nib Tip -->
+      <path d="M 248 340 L 272 340 L 260 365 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round" />
+
+      <!-- Pen Barrel -->
+      <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="238" y1="120" x2="238" y2="320" stroke-width="7" />
+        <line x1="282" y1="120" x2="282" y2="320" stroke-width="7" />
+        <line x1="238" y1="120" x2="282" y2="120" stroke-width="7" />
+      </g>
+    </g>
+  </g>
+</svg>
