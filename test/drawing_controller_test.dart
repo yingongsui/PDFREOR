@@ -163,6 +163,74 @@ void main() {
       expect(controller.shapes.length, 1);
       expect(controller.shapes.first.id, shape.id);
     });
+
+    test('TextBox deletion undo, Image move/resize undo, and split layer listenables', () {
+      final controller = DrawingController();
+      int savedNotifies = 0;
+      int activeNotifies = 0;
+      controller.savedLayerListenable.addListener(() => savedNotifies++);
+      controller.activeLayerListenable.addListener(() => activeNotifies++);
+
+      // High-frequency stroke points must ONLY notify activeLayerListenable
+      controller.startStroke(const Offset(10, 10), 0.5);
+      controller.addStrokePoint(const Offset(20, 20), 0.6);
+      controller.addStrokePoint(const Offset(30, 30), 0.7);
+      expect(activeNotifies, 3);
+      expect(savedNotifies, 0);
+
+      controller.endStroke(Colors.black, 3.0, 1);
+      expect(savedNotifies, 1);
+
+      // Add non-empty TextBox, delete it, and undo
+      final tb = DrawnTextBox(
+        id: 'tb_undo',
+        text: 'Important Note',
+        position: const Offset(40, 60),
+        color: Colors.red,
+        fontSize: 16.0,
+        pageNumber: 1,
+        width: 200.0,
+      );
+      controller.addTextBox(tb);
+      expect(controller.textBoxes.length, 1);
+
+      controller.deleteTextBox('tb_undo');
+      expect(controller.textBoxes.isEmpty, true);
+
+      controller.undo();
+      expect(controller.textBoxes.length, 1);
+      expect(controller.textBoxes.first.text, 'Important Note');
+
+      // Image move/resize undo
+      final img = DrawnImage(
+        id: 'img_move',
+        imageBytes: Uint8List.fromList([1, 2, 3, 4]),
+        position: const Offset(20, 30),
+        width: 100,
+        height: 80,
+        pageNumber: 1,
+      );
+      controller.addImage(img);
+      img.position = const Offset(120, 150);
+      img.width = 200;
+      img.height = 160;
+      controller.updateImage(img);
+      controller.recordImageModification(img, const Offset(20, 30), 100, 80);
+
+      controller.undo();
+      expect(controller.images.first.position, const Offset(20, 30));
+      expect(controller.images.first.width, 100);
+      expect(controller.images.first.height, 80);
+
+      // Viewport width rescaling (portrait 400px -> landscape 800px)
+      final oldBounds = [const Rect.fromLTWH(0, 0, 400, 600)];
+      final newBounds = [const Rect.fromLTWH(0, 0, 800, 1200)];
+      controller.rescaleAnnotations(oldBounds, newBounds);
+      expect(controller.images.first.position, const Offset(40, 60));
+      expect(controller.images.first.width, 200);
+
+      controller.dispose();
+    });
   });
 }
 

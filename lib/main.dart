@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'screens/home_screen.dart';
+import 'services/pdf_system_font_service.dart';
 import 'services/pdf_tab_manager.dart';
+import 'services/reading_progress_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,7 +14,11 @@ void main() async {
       statusBarIconBrightness: Brightness.dark,
     ),
   );
-  await PdfTabManager.instance.init();
+  await Future.wait([
+    pdfrxFlutterInitialize().then((_) => PdfSystemFontService.instance.init()),
+    PdfTabManager.instance.init(),
+    ReadingProgressService.instance.init(),
+  ]);
   runApp(const PDFREORApp());
 }
 

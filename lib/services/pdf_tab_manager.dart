@@ -1,9 +1,12 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/pdf_file_info.dart';
+import 'pdf_export_service.dart';
+import 'reading_progress_service.dart';
 
 /// Global manager for open PDF document tabs across the app with persistence.
 class PdfTabManager extends ChangeNotifier {
@@ -12,10 +15,11 @@ class PdfTabManager extends ChangeNotifier {
 
   static const _fileName = 'open_tabs.json';
   final List<PdfFileInfo> _openTabs = [];
+  late final UnmodifiableListView<PdfFileInfo> _openTabsView = UnmodifiableListView(_openTabs);
   int _activeIndex = 0;
   bool _initialized = false;
 
-  List<PdfFileInfo> get openTabs => List.unmodifiable(_openTabs);
+  List<PdfFileInfo> get openTabs => _openTabsView;
   int get activeIndex => _activeIndex;
   int get tabCount => _openTabs.length;
 
@@ -88,7 +92,7 @@ class PdfTabManager extends ChangeNotifier {
                 })
             .toList(),
       };
-      await file.writeAsString(jsonEncode(data));
+      await PdfExportService.atomicWriteString(file, jsonEncode(data));
     } catch (e) {
       debugPrint('Error persisting open tabs: $e');
     }
@@ -150,6 +154,7 @@ class PdfTabManager extends ChangeNotifier {
   }
 
   void renameTab(String oldPath, PdfFileInfo newFile) {
+    ReadingProgressService.instance.renamePath(oldPath, newFile.path);
     final idx = _openTabs.indexWhere((t) => t.path == oldPath);
     if (idx != -1) {
       _openTabs[idx] = newFile;
@@ -165,4 +170,3 @@ class PdfTabManager extends ChangeNotifier {
     _persistTabs().ignore();
   }
 }
-

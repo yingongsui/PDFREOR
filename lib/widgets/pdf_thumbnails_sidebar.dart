@@ -33,7 +33,10 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
     _scrollController = ScrollController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients && widget.currentPage > 1) {
-        final targetRow = (widget.currentPage - 1) ~/ 2;
+        final screenSize = MediaQuery.of(context).size;
+        final isTablet = screenSize.shortestSide >= 600;
+        final cols = isTablet ? 2 : 1;
+        final targetRow = (widget.currentPage - 1) ~/ cols;
         final targetOffset = targetRow * 190.0;
         final maxScroll = _scrollController.position.maxScrollExtent;
         _scrollController.jumpTo(targetOffset.clamp(0.0, maxScroll));
@@ -145,6 +148,7 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
                   final isCurrent = pageNumber == widget.currentPage;
 
                   return _ThumbnailCard(
+                    key: ValueKey('thumb_${widget.file.path}_$pageNumber'),
                     filePath: widget.file.path,
                     lastModifiedMillis: widget.file.lastModified.millisecondsSinceEpoch,
                     pageNumber: pageNumber,
@@ -161,7 +165,7 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
   }
 }
 
-class _ThumbnailCard extends StatelessWidget {
+class _ThumbnailCard extends StatefulWidget {
   final String filePath;
   final int lastModifiedMillis;
   final int pageNumber;
@@ -169,6 +173,7 @@ class _ThumbnailCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ThumbnailCard({
+    super.key,
     required this.filePath,
     required this.lastModifiedMillis,
     required this.pageNumber,
@@ -177,23 +182,54 @@ class _ThumbnailCard extends StatelessWidget {
   });
 
   @override
+  State<_ThumbnailCard> createState() => _ThumbnailCardState();
+}
+
+class _ThumbnailCardState extends State<_ThumbnailCard> {
+  late Future<Uint8List?> _thumbnailFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFuture();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThumbnailCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.filePath != widget.filePath ||
+        oldWidget.pageNumber != widget.pageNumber ||
+        oldWidget.lastModifiedMillis != widget.lastModifiedMillis) {
+      _loadFuture();
+    }
+  }
+
+  void _loadFuture() {
+    _thumbnailFuture = PdfThumbnailService.instance.getPageThumbnail(
+      widget.filePath,
+      widget.pageNumber,
+      lastModifiedMillis: widget.lastModifiedMillis,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isCurrent
+            color: widget.isCurrent
                 ? const Color(0xFF1E90FF)
                 : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-            width: isCurrent ? 2.2 : 1.0,
+            width: widget.isCurrent ? 2.2 : 1.0,
           ),
-          boxShadow: isCurrent
+          boxShadow: widget.isCurrent
               ? [
                   BoxShadow(
                     color: const Color(0xFF1E90FF).withValues(alpha: 0.35),
@@ -214,11 +250,7 @@ class _ThumbnailCard extends StatelessWidget {
           children: [
             Positioned.fill(
               child: FutureBuilder<Uint8List?>(
-                future: PdfThumbnailService.instance.getPageThumbnail(
-                  filePath,
-                  pageNumber,
-                  lastModifiedMillis: lastModifiedMillis,
-                ),
+                future: _thumbnailFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -245,7 +277,6 @@ class _ThumbnailCard extends StatelessWidget {
                 },
               ),
             ),
-            // Bottom Page Number Label
             Positioned(
               left: 0,
               right: 0,
@@ -253,12 +284,12 @@ class _ThumbnailCard extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 decoration: BoxDecoration(
-                  color: isCurrent
+                  color: widget.isCurrent
                       ? const Color(0xFF1E90FF).withValues(alpha: 0.9)
                       : Colors.black.withValues(alpha: 0.6),
                 ),
                 child: Text(
-                  '$pageNumber',
+                  '${widget.pageNumber}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
@@ -274,4 +305,3 @@ class _ThumbnailCard extends StatelessWidget {
     );
   }
 }
-

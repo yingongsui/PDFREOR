@@ -9,6 +9,7 @@ import '../models/pdf_file_info.dart';
 import '../services/pdf_scanner_service.dart';
 import '../services/pdf_tab_manager.dart';
 import '../services/pdf_thumbnail_service.dart';
+import '../services/reading_progress_service.dart';
 import '../widgets/pdf_list_tile.dart';
 import '../widgets/pdf_thumbnail_card.dart';
 import 'pdf_viewer_screen.dart';
@@ -47,14 +48,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _intentChannel = MethodChannel('com.yin.pdfreor/intent');
+
   final PdfScannerService _scannerService = PdfScannerService.instance;
 
   List<PdfFileInfo> _allFiles = [];
   List<PdfFileInfo> _filteredFiles = [];
+  List<MapEntry<String, List<PdfFileInfo>>>? _cachedGroupedEntries;
 
   bool _isLoading = false;
   bool _hasPermission = true;
   String _scanStatusText = '';
+  bool _isViewerRouteOpen = false;
 
   PdfViewMode _viewMode = PdfViewMode.thumbnail;
   SortType _sortType = SortType.dateDesc;
@@ -73,8 +78,49 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadPreferences();
     PdfTabManager.instance.init();
+    ReadingProgressService.instance.init();
     PdfTabManager.instance.addListener(_onTabStateChanged);
+    _intentChannel.setMethodCallHandler(_handleIntentChannelCall);
+    _intentChannel.invokeMethod<String>('consumeInitialPdfPath').then((path) {
+      if (path != null && path.isNotEmpty && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openExternalIntentPdf(path);
+        });
+      }
+    }).catchError((_) {});
     _checkPermissionAndScan();
+  }
+
+  Future<void> _handleIntentChannelCall(MethodCall call) async {
+    if (!mounted) return;
+    if (call.method == 'onOpenExternalPdf') {
+      final path = call.arguments as String?;
+      if (path != null && path.isNotEmpty) {
+        _openExternalIntentPdf(path);
+      }
+    }
+  }
+
+  Future<void> _openExternalIntentPdf(String path) async {
+    final ioFile = File(path);
+    if (!await ioFile.exists()) return;
+    try {
+      final info = PdfFileInfo.fromFile(ioFile);
+      await _scannerService.addImportedFilePaths([path]);
+      if (mounted) {
+        setState(() {
+          if (!_allFiles.any((f) => f.path == path)) {
+            _allFiles.insert(0, info);
+          }
+          _applyFilterAndSort();
+        });
+      }
+      if (_isViewerRouteOpen) {
+        PdfTabManager.instance.openTab(info);
+      } else if (mounted) {
+        _openPdfViewer(info);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPreferences() async {
@@ -117,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _intentChannel.setMethodCallHandler(null);
     PdfTabManager.instance.removeListener(_onTabStateChanged);
     _searchController.dispose();
     super.dispose();
@@ -371,16 +418,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     _filteredFiles = list;
+    _cachedGroupedEntries = null;
   }
 
   void _openPdfViewer(PdfFileInfo file) {
     PdfTabManager.instance.openTab(file);
+    if (_isViewerRouteOpen) return;
+    _isViewerRouteOpen = true;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PdfViewerScreen(file: file),
       ),
-    ).then((_) {
+    ).whenComplete(() {
+      _isViewerRouteOpen = false;
       if (mounted) setState(() {});
     });
   }
@@ -519,17 +570,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final oldFile = File(file.path);
-      await oldFile.rename(newPath);
+      final renamedFile = await oldFile.rename(newPath);
 
-      final updatedFileInfo = PdfFileInfo(
-        path: newPath,
-        name: newFileName,
-        sizeInBytes: file.sizeInBytes,
-        lastModified: DateTime.now(),
-      );
+      final updatedFileInfo = PdfFileInfo.fromFile(renamedFile);
+
+      await _scannerService.renameImportedFilePath(file.path, newPath);
 
       // Invalidate old thumbnail cache
       PdfThumbnailService.instance.invalidate(file.path);
+      ReadingProgressService.instance.renamePath(file.path, newPath);
 
       // Update in open tabs if present
       PdfTabManager.instance.renameTab(file.path, updatedFileInfo);
@@ -699,10 +748,23 @@ class _HomeScreenState extends State<HomeScreen> {
               finalDestPath = p.join(targetDir.path, '$baseName ($counter)$ext');
               counter++;
             }
-            await sourceFile.copy(finalDestPath);
-            await sourceFile.delete();
+            try {
+              await sourceFile.rename(finalDestPath);
+            } on FileSystemException {
+              await sourceFile.copy(finalDestPath);
+              await sourceFile.delete();
+            }
+            await _scannerService.renameImportedFilePath(sourcePath, finalDestPath);
             PdfThumbnailService.instance.invalidate(sourcePath);
-            PdfTabManager.instance.closeTabByPath(sourcePath);
+            ReadingProgressService.instance.renamePath(sourcePath, finalDestPath);
+            try {
+              PdfTabManager.instance.renameTab(
+                sourcePath,
+                PdfFileInfo.fromFile(File(finalDestPath)),
+              );
+            } catch (_) {
+              PdfTabManager.instance.closeTabByPath(sourcePath);
+            }
             successCount++;
           }
         } else {
@@ -806,12 +868,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeFile = targetFile ?? selectedFiles.first;
     PdfTabManager.instance.openMultipleTabs(selectedFiles, activePath: activeFile.path);
     _exitSelectionMode();
+    if (_isViewerRouteOpen) return;
+    _isViewerRouteOpen = true;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PdfViewerScreen(file: activeFile),
       ),
-    ).then((_) {
+    ).whenComplete(() {
+      _isViewerRouteOpen = false;
       if (mounted) setState(() {});
     });
   }
@@ -866,6 +931,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           await _scannerService.removeImportedFilePath(path);
           PdfThumbnailService.instance.invalidate(path);
+          ReadingProgressService.instance.removePath(path);
           PdfTabManager.instance.closeTabByPath(path);
         } catch (_) {}
       }
@@ -1034,6 +1100,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _setFolderSort(FolderSortType type) {
     setState(() {
       _folderSortType = type;
+      _cachedGroupedEntries = null;
     });
     _scannerService.setFolderSort(type.name);
   }
@@ -1862,6 +1929,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<MapEntry<String, List<PdfFileInfo>>> get _sortedGroupedEntries {
+    return _cachedGroupedEntries ??= _computeSortedGroupedEntries();
+  }
+
+  List<MapEntry<String, List<PdfFileInfo>>> _computeSortedGroupedEntries() {
     final Map<String, List<PdfFileInfo>> groups = {};
     for (final file in _filteredFiles) {
       final folder = file.parentDirectoryPath.isNotEmpty

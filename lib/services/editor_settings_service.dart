@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/editor_models.dart';
+import 'pdf_export_service.dart';
 
 enum AppFontFamily {
   sansSerif, // Sans-Serif (Modern / HeiTi / Noto Sans / Helvetica)
@@ -131,7 +132,7 @@ class EditorSettingsService {
     settingsNotifier.value = settings;
     try {
       final file = await _getFile();
-      await file.writeAsString(jsonEncode(settings.toJson()));
+      await PdfExportService.atomicWriteString(file, jsonEncode(settings.toJson()));
     } catch (e) {
       debugPrint('Error saving editor settings: $e');
     }

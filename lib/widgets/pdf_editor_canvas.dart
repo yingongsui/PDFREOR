@@ -6,9 +6,9 @@ import 'package:flutter/rendering.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import '../services/editor_settings_service.dart';
+import 'pdf_canvas_items.dart';
 
-/// TapRegion group id shared by editable elements and the bottom property bar
-const String kEditableElementRegionGroup = 'EditableElementRegionGroup';
+export 'pdf_canvas_items.dart' show kEditableElementRegionGroup;
 
 /// A Stack that does not reject hit-testing based on viewport size.
 /// In document space (which can be multi-page, scrolled, and zoomed),
@@ -69,6 +69,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
   Color activeColor;
   double activeStrokeWidth;
   int currentPage;
+  int Function()? currentPageGetter;
   DrawingController controller;
   TransformationController? transformationController;
   bool isHardwareButtonPressed;
@@ -86,6 +87,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     required this.activeColor,
     required this.activeStrokeWidth,
     required this.currentPage,
+    this.currentPageGetter,
     required this.controller,
     this.transformationController,
     this.isHardwareButtonPressed = false,
@@ -104,6 +106,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     required Color activeColor,
     required double activeStrokeWidth,
     required int currentPage,
+    int Function()? currentPageGetter,
     required DrawingController controller,
     TransformationController? transformationController,
     bool isHardwareButtonPressed = false,
@@ -120,6 +123,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.activeColor = activeColor;
     this.activeStrokeWidth = activeStrokeWidth;
     this.currentPage = currentPage;
+    this.currentPageGetter = currentPageGetter;
     this.controller = controller;
     this.transformationController = transformationController;
     this.isHardwareButtonPressed = isHardwareButtonPressed;
@@ -135,7 +139,6 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
         event.kind == PointerDeviceKind.invertedStylus) {
       return true;
     }
-    // Also consider pressure-sensitive hardware digitizer
     if (event.kind == PointerDeviceKind.unknown) {
       return true;
     }
@@ -175,8 +178,6 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     final isOneShot = oneShotShape != null;
     final docPos = _getDocPoint(event.localPosition);
 
-    // 1. One-shot shape drawing (from long-press menu):
-    // MUST work immediately with finger or stylus, winning the gesture arena!
     if (isOneShot) {
       startTrackingPointer(event.pointer, event.transform);
       resolve(GestureDisposition.accepted);
@@ -184,7 +185,6 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
       return;
     }
 
-    // If a shape is currently selected, do not capture if pointer is on or near it
     if (selectedShapeId != null) {
       final selectedShape = controller.shapes.cast<DrawnShape?>().firstWhere(
         (s) => s?.id == selectedShapeId,
@@ -214,18 +214,14 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
 
     if (stylusOnly) {
       if (!isStylus) {
-        // Palm rejection active: fingers are rejected by the drawing recognizer
-        // so that the underlying SfPdfViewer handles scrolling, pinch-zoom, and text selection.
         return;
       }
     } else {
-      // Palm rejection inactive:
       if (!isDrawingMode && !isStylus) {
         return;
       }
     }
 
-    // Stylus touches (or finger touches when in drawing mode) win the gesture arena immediately.
     startTrackingPointer(event.pointer, event.transform);
     resolve(GestureDisposition.accepted);
 
@@ -236,7 +232,6 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     } else if (activeTool == EditorTool.shape) {
       controller.startShape(docPos);
     } else {
-      // Default to pen drawing
       if (activeTool != EditorTool.pen) {
         onStylusDrawStarted?.call();
       }
@@ -262,15 +257,16 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
         controller.addStrokePoint(docPos, event.pressure);
       }
     } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      final page = currentPageGetter?.call() ?? currentPage;
       if (isEraser && !isOneShot) {
         controller.cancelActiveStroke();
       } else if (isOneShot) {
-        controller.endShape(oneShotShape!, activeColor, activeStrokeWidth, currentPage);
+        controller.endShape(oneShotShape!, activeColor, activeStrokeWidth, page);
         onOneShotShapeCompleted?.call();
       } else if (activeTool == EditorTool.shape) {
-        controller.endShape(activeShape, activeColor, activeStrokeWidth, currentPage);
+        controller.endShape(activeShape, activeColor, activeStrokeWidth, page);
       } else {
-        controller.endStroke(activeColor, activeStrokeWidth, currentPage);
+        controller.endStroke(activeColor, activeStrokeWidth, page);
       }
       stopTrackingPointer(event.pointer);
     }
@@ -317,6 +313,7 @@ class PdfEditorCanvas extends StatefulWidget {
   final Color activeColor;
   final double activeStrokeWidth;
   final int currentPage;
+  final int Function()? currentPageGetter;
   final bool stylusOnlyMode;
   final bool isStylusDetected;
   final bool isHardwareButtonPressed;
@@ -348,6 +345,7 @@ class PdfEditorCanvas extends StatefulWidget {
     required this.activeColor,
     required this.activeStrokeWidth,
     required this.currentPage,
+    this.currentPageGetter,
     required this.stylusOnlyMode,
     this.isStylusDetected = false,
     this.isHardwareButtonPressed = false,
@@ -379,6 +377,24 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   Timer? _longPressTimer;
   Offset? _pointerDownScreenPos;
   int? _pointerDownId;
+  late Listenable _savedPaintListenable;
+  late Listenable _activePaintListenable;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildPaintListenables();
+  }
+
+  void _rebuildPaintListenables() {
+    final tc = widget.transformationController;
+    _savedPaintListenable = tc != null
+        ? Listenable.merge([widget.controller.savedLayerListenable, tc])
+        : widget.controller.savedLayerListenable;
+    _activePaintListenable = tc != null
+        ? Listenable.merge([widget.controller.activeLayerListenable, tc])
+        : widget.controller.activeLayerListenable;
+  }
 
   String? get _selectedShapeId => widget.selectedShapeId;
   String? get _selectedStrokeId => widget.selectedStrokeId;
@@ -399,6 +415,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   bool get _isDrawingMode =>
       widget.activeTool == EditorTool.pen ||
       widget.activeTool == EditorTool.shape ||
+      widget.activeTool == EditorTool.eraser ||
       widget.activeTool == EditorTool.textBox;
 
   void _checkPointer(PointerEvent event) {
@@ -426,7 +443,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
     final isStylus = event.kind == PointerDeviceKind.stylus ||
         event.kind == PointerDeviceKind.invertedStylus;
 
-    // Stylus is dedicated to writing/erasing; finger in touch/dual mode selects and adjusts shapes/strokes.
     final isFingerTouchMode = !isStylus &&
         (widget.isStylusDetected || widget.stylusOnlyMode || widget.activeTool == EditorTool.select);
     final canSelectElements = isFingerTouchMode || (!isStylus && widget.activeTool == EditorTool.select);
@@ -436,7 +452,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         widget.oneShotShape == null &&
         !widget.hasActiveTextSelection &&
         !isEraser) {
-      // 1. If currently a shape is selected:
       if (_selectedShapeId != null) {
         final selectedShape = widget.controller.shapes.cast<DrawnShape?>().firstWhere(
           (s) => s?.id == _selectedShapeId,
@@ -449,7 +464,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
           final maxY = math.max(selectedShape.start.dy, selectedShape.end.dy) + 48.0;
           final bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
           if (!bounds.contains(docPos)) {
-            // Tapped outside selected shape: check if another shape was tapped
             final otherShape = widget.controller.hitTestShape(docPos, 24.0);
             _setSelectedShape(otherShape?.id);
             if (otherShape != null) {
@@ -466,7 +480,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         }
       }
 
-      // 2. Check if clicking on or near any shape
       final hitShape = widget.controller.hitTestShape(docPos, 24.0);
       if (hitShape != null) {
         _setSelectedShape(hitShape.id);
@@ -476,7 +489,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         return;
       }
 
-      // 3. Check if clicking on or near any pen stroke
       final hitStroke = widget.controller.hitTestStroke(docPos, 20.0);
       if (hitStroke != null) {
         _setSelectedStroke(hitStroke.id);
@@ -487,7 +499,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         return;
       }
 
-      // 4. Check if clicking on any text annotation (highlight, underline, strikethrough)
       final hitTa = widget.controller.hitTestTextAnnotation(docPos, 6.0);
       if (hitTa != null) {
         _setSelectedTextAnnotation(hitTa.id);
@@ -498,7 +509,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         return;
       }
 
-      // Tapped empty area: deselect shape, stroke, and text annotation
       if (_selectedShapeId != null) {
         _setSelectedShape(null);
       }
@@ -509,8 +519,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         _setSelectedTextAnnotation(null);
       }
     } else if (!canSelectElements) {
-      // In pen / shape / eraser mode, ensure any previously selected stroke, shape, or text annotation is deselected
-      // when stylus draws or user switches to shape creation mode.
       if (isStylus || widget.activeTool == EditorTool.shape) {
         if (_selectedShapeId != null) {
           _setSelectedShape(null);
@@ -524,7 +532,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       }
     }
 
-    // 2. Secondary button / mouse right click triggers context menu immediately ONLY for mouse!
     if (event.kind == PointerDeviceKind.mouse && (event.buttons & kSecondaryMouseButton) != 0) {
       if (!widget.hasActiveTextSelection) {
         widget.onNonTextLongPressed?.call(event.position, docPos);
@@ -535,8 +542,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
     if (widget.oneShotShape != null) return;
     if (widget.hasActiveTextSelection) return;
 
-    // NEVER trigger finger long-press menu from any stylus input or when eraser/button is active!
-    if (isStylus || isEraser) {
+    if (isStylus || isEraser || widget.onNonTextLongPressed == null) {
       _longPressTimer?.cancel();
       _pointerDownScreenPos = null;
       return;
@@ -560,15 +566,17 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         _longPressTimer?.cancel();
         _pointerDownScreenPos = null;
       }
-    } else if (widget.activeTool == EditorTool.select && _selectedShapeId == null) {
-      // In select mode while scrolling, skip all pointer move computations
+    }
+    if (event.kind == PointerDeviceKind.touch) {
       return;
     }
     _checkPointer(event);
   }
 
   void _handlePointerUp(PointerUpEvent event) {
-    _checkPointer(event);
+    if (event.kind != PointerDeviceKind.touch) {
+      _checkPointer(event);
+    }
     if (event.pointer == _pointerDownId) {
       _longPressTimer?.cancel();
       _pointerDownScreenPos = null;
@@ -576,7 +584,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
-    _checkPointer(event);
+    if (event.kind != PointerDeviceKind.touch) {
+      _checkPointer(event);
+    }
     _longPressTimer?.cancel();
     _pointerDownScreenPos = null;
   }
@@ -584,6 +594,10 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   @override
   void didUpdateWidget(covariant PdfEditorCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller ||
+        widget.transformationController != oldWidget.transformationController) {
+      _rebuildPaintListenables();
+    }
     if (widget.hasActiveTextSelection) {
       _longPressTimer?.cancel();
       _pointerDownScreenPos = null;
@@ -598,23 +612,49 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final hasAnnotations = widget.controller.strokes.isNotEmpty ||
-        widget.controller.shapes.isNotEmpty ||
+    final hasWidgetAnnotations = widget.controller.shapes.isNotEmpty ||
         widget.controller.images.isNotEmpty ||
-        widget.controller.textBoxes.isNotEmpty ||
-        widget.controller.textAnnotations.isNotEmpty ||
-        widget.controller.activeStrokePoints != null ||
-        widget.controller.activeShapeStart != null ||
-        _selectedStrokeId != null ||
-        _selectedTextAnnotationId != null;
+        widget.controller.textBoxes.isNotEmpty;
 
     Widget content = Stack(
       fit: StackFit.expand,
       children: [
-        // All vector annotations (strokes, shapes, images, textboxes) transformed seamlessly on GPU
-        if (hasAnnotations)
+        // 1a. Committed strokes & text annotations rendered in viewport space with frustum culling
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              isComplex: true,
+              painter: _SavedAnnotationsPainter(
+                repaint: _savedPaintListenable,
+                controller: widget.controller,
+                transformationController: widget.transformationController,
+                selectedStrokeId: _selectedStrokeId,
+                selectedTextAnnotationId: _selectedTextAnnotationId,
+              ),
+            ),
+          ),
+        ),
+        // 1b. Active in-progress stroke / shape preview layer (isolated 240Hz RepaintBoundary)
+        Positioned.fill(
+          child: IgnorePointer(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _ActiveAnnotationPainter(
+                  repaint: _activePaintListenable,
+                  controller: widget.controller,
+                  transformationController: widget.transformationController,
+                  currentColor: widget.activeColor,
+                  currentStrokeWidth: widget.activeStrokeWidth,
+                  shapeType: widget.oneShotShape ?? widget.activeShape,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 2-4. Interactive widget annotations (mounted only when present to avoid scroll rebuilds)
+        if (hasWidgetAnnotations)
           AnimatedBuilder(
-            animation: widget.transformationController ?? ValueNotifier(null),
+            animation: widget.transformationController ?? const AlwaysStoppedAnimation(null),
             builder: (context, child) {
               final matrix = widget.transformationController?.value ?? Matrix4.identity();
               return Transform(
@@ -629,48 +669,34 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               child: DocumentStack(
                 clipBehavior: Clip.none,
                 children: [
-                  // 1. Strokes Layer in document space
-                  Positioned.fill(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        isComplex: true,
-                        painter: _EditorPainter(
-                          repaint: widget.controller,
-                          controller: widget.controller,
-                          currentColor: widget.activeColor,
-                          currentStrokeWidth: widget.activeStrokeWidth,
-                          shapeType: widget.oneShotShape ?? widget.activeShape,
-                          selectedStrokeId: _selectedStrokeId,
-                          selectedTextAnnotationId: _selectedTextAnnotationId,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // 2. Shapes
                   for (final shape in widget.controller.shapes)
                     _buildShapeWidget(shape),
-                  // 3. Pasted Images
                   for (final img in widget.controller.images)
-                    _ImageWidget(
+                    ImageCanvasItem(
+                      key: ValueKey('img_${img.id}'),
                       image: img,
+                      transformationController: widget.transformationController,
                       onUpdate: (newPos, newW, newH) {
                         img.position = newPos;
                         img.width = newW;
                         img.height = newH;
                         widget.controller.updateImage(img);
                       },
+                      onModificationCommitted: (oldPos, oldW, oldH) {
+                        widget.controller.recordImageModification(img, oldPos, oldW, oldH);
+                      },
                       onDelete: () => widget.controller.deleteImage(img.id),
                     ),
-                  // 4. Text Boxes
                   for (final tb in widget.controller.textBoxes)
                     Positioned(
                       key: ValueKey(tb.id),
                       left: tb.position.dx,
                       top: tb.position.dy,
-                      child: _TextBoxWidget(
+                      child: TextBoxCanvasItem(
                         key: ValueKey('tb_${tb.id}'),
                         textBox: tb,
                         textBoxFont: widget.textBoxFont,
+                        transformationController: widget.transformationController,
                         isEditing: widget.editingTextBoxId == tb.id,
                         onStartEditing: () => widget.onEditingTextBoxChanged?.call(tb.id),
                         onFinishEditing: () => widget.onEditingTextBoxChanged?.call(null),
@@ -680,6 +706,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                           tb.fontSize = newFontSize;
                           tb.width = newWidth;
                           widget.controller.updateTextBox(tb);
+                        },
+                        onLayoutModificationCommitted: (oldPos, oldWidth) {
+                          widget.controller.recordTextBoxLayoutModification(tb, oldPos, oldWidth);
                         },
                         onDelete: () {
                           if (widget.editingTextBoxId == tb.id) {
@@ -745,7 +774,8 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTapDown: (details) {
-          final docPos = widget.transformationController?.toScene(details.localPosition) ?? details.localPosition;
+          final docPos = widget.transformationController?.toScene(details.localPosition) ??
+              details.localPosition;
           widget.onAddTextBoxRequested(docPos);
         },
         child: content,
@@ -772,6 +802,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               activeColor: widget.activeColor,
               activeStrokeWidth: widget.activeStrokeWidth,
               currentPage: widget.currentPage,
+              currentPageGetter: widget.currentPageGetter,
               controller: widget.controller,
               transformationController: widget.transformationController,
               isHardwareButtonPressed: widget.isHardwareButtonPressed,
@@ -790,6 +821,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                 activeColor: widget.activeColor,
                 activeStrokeWidth: widget.activeStrokeWidth,
                 currentPage: widget.currentPage,
+                currentPageGetter: widget.currentPageGetter,
                 controller: widget.controller,
                 transformationController: widget.transformationController,
                 isHardwareButtonPressed: widget.isHardwareButtonPressed,
@@ -822,7 +854,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       top: minY - kPadding,
       width: width + kPadding * 2,
       height: height + kPadding * 2,
-      child: _ShapeWidget(
+      child: ShapeCanvasItem(
         key: ValueKey('sw_${shape.id}'),
         shape: shape,
         isSelected: _selectedShapeId == shape.id,
@@ -852,29 +884,71 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   }
 }
 
-class _EditorPainter extends CustomPainter {
+void _paintStrokePoints(Canvas canvas, List<StrokePoint> points, Color color, double baseWidth) {
+  if (points.isEmpty) return;
+  if (points.length == 1) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(points.first.offset, baseWidth / 2, paint);
+    return;
+  }
+
+  final paint = Paint()
+    ..color = color
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+
+  for (int i = 0; i < points.length - 1; i++) {
+    final p1 = points[i];
+    final p2 = points[i + 1];
+    final avgPressure = (p1.pressure + p2.pressure) / 2;
+    final pressureScale = (avgPressure > 0.0 && avgPressure != 1.0)
+        ? (0.75 + 0.5 * avgPressure.clamp(0.0, 1.0))
+        : 1.0;
+    paint.strokeWidth = math.max(0.5, baseWidth * pressureScale);
+    canvas.drawLine(p1.offset, p2.offset, paint);
+  }
+}
+
+class _SavedAnnotationsPainter extends CustomPainter {
   final DrawingController controller;
-  final Color currentColor;
-  final double currentStrokeWidth;
-  final ShapeType shapeType;
+  final TransformationController? transformationController;
   final String? selectedStrokeId;
   final String? selectedTextAnnotationId;
 
-  _EditorPainter({
+  _SavedAnnotationsPainter({
     required super.repaint,
     required this.controller,
-    required this.currentColor,
-    required this.currentStrokeWidth,
-    required this.shapeType,
+    this.transformationController,
     this.selectedStrokeId,
     this.selectedTextAnnotationId,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 0. Draw text annotations (highlights, underlines, strikethroughs)
+    if (controller.strokes.isEmpty && controller.textAnnotations.isEmpty) {
+      return;
+    }
+
+    final tc = transformationController;
+    final Rect visibleDocRect;
+    if (tc != null) {
+      final p1 = tc.toScene(Offset.zero);
+      final p2 = tc.toScene(Offset(size.width, size.height));
+      visibleDocRect = Rect.fromPoints(p1, p2).inflate(48.0);
+      canvas.save();
+      canvas.transform(tc.value.storage);
+    } else {
+      visibleDocRect = (Offset.zero & size).inflate(48.0);
+    }
+
     for (final ta in controller.textAnnotations) {
       final isSelected = ta.id == selectedTextAnnotationId;
+      if (!isSelected && !ta.getBounds().overlaps(visibleDocRect)) {
+        continue;
+      }
       switch (ta.type) {
         case TextAnnotationType.highlight:
           final paint = Paint()
@@ -934,10 +1008,13 @@ class _EditorPainter extends CustomPainter {
       }
     }
 
-    // 1. Draw saved strokes in document space
     for (final stroke in controller.strokes) {
-      if (stroke.id == selectedStrokeId) {
-        // Draw selection halo around selected stroke
+      final isSelected = stroke.id == selectedStrokeId;
+      final pad = stroke.strokeWidth + 12.0;
+      if (!isSelected && !stroke.getBounds().inflate(pad).overlaps(visibleDocRect)) {
+        continue;
+      }
+      if (isSelected) {
         final glowPaint = Paint()
           ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
           ..strokeCap = StrokeCap.round
@@ -947,7 +1024,6 @@ class _EditorPainter extends CustomPainter {
         for (int i = 0; i < stroke.points.length - 1; i++) {
           canvas.drawLine(stroke.points[i].offset, stroke.points[i + 1].offset, glowPaint);
         }
-        // Draw subtle selection bounding box
         final bounds = stroke.getBounds().inflate(6.0 + stroke.strokeWidth / 2);
         final boxPaint = Paint()
           ..color = const Color(0xFF1E88E5).withValues(alpha: 0.75)
@@ -955,17 +1031,66 @@ class _EditorPainter extends CustomPainter {
           ..strokeWidth = 1.2;
         canvas.drawRRect(RRect.fromRectAndRadius(bounds, const Radius.circular(8)), boxPaint);
       }
-      _drawStroke(canvas, stroke.points, stroke.color, stroke.strokeWidth);
+      _paintStrokePoints(canvas, stroke.points, stroke.color, stroke.strokeWidth);
     }
 
-    // 2. Draw currently active stroke in document space
-    if (controller.activeStrokePoints != null && controller.activeStrokePoints!.isNotEmpty) {
-      _drawStroke(canvas, controller.activeStrokePoints!, currentColor, currentStrokeWidth);
+    if (tc != null) {
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SavedAnnotationsPainter oldDelegate) {
+    return oldDelegate.selectedStrokeId != selectedStrokeId ||
+        oldDelegate.selectedTextAnnotationId != selectedTextAnnotationId ||
+        oldDelegate.transformationController != transformationController ||
+        oldDelegate.controller != controller;
+  }
+}
+
+class _ActiveAnnotationPainter extends CustomPainter {
+  final DrawingController controller;
+  final TransformationController? transformationController;
+  final Color currentColor;
+  final double currentStrokeWidth;
+  final ShapeType shapeType;
+
+  _ActiveAnnotationPainter({
+    required super.repaint,
+    required this.controller,
+    this.transformationController,
+    required this.currentColor,
+    required this.currentStrokeWidth,
+    required this.shapeType,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hasStroke = controller.activeStrokePoints != null &&
+        controller.activeStrokePoints!.isNotEmpty;
+    final hasShape = controller.activeShapeStart != null &&
+        controller.activeShapeEnd != null;
+    if (!hasStroke && !hasShape) {
+      return;
     }
 
-    // 3. Draw currently active shape preview
-    if (controller.activeShapeStart != null && controller.activeShapeEnd != null) {
-      _drawShape(
+    final tc = transformationController;
+    if (tc != null) {
+      canvas.save();
+      canvas.transform(tc.value.storage);
+    }
+
+    if (hasStroke) {
+      _paintStrokePoints(
+        canvas,
+        controller.activeStrokePoints!,
+        currentColor,
+        currentStrokeWidth,
+      );
+    }
+
+    if (hasShape) {
+      _drawShapePreview(
         canvas,
         shapeType,
         controller.activeShapeStart!,
@@ -974,41 +1099,13 @@ class _EditorPainter extends CustomPainter {
         currentStrokeWidth,
       );
     }
-  }
 
-  void _drawStroke(Canvas canvas, List<StrokePoint> points, Color color, double baseWidth) {
-    if (points.isEmpty) return;
-    if (points.length == 1) {
-      final paint = Paint()
-        ..color = color
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(points.first.offset, baseWidth / 2, paint);
-      return;
-    }
-
-    final paint = Paint()
-      ..color = color
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-
-    for (int i = 0; i < points.length - 1; i++) {
-      final p1 = points[i];
-      final p2 = points[i + 1];
-      final avgPressure = (p1.pressure + p2.pressure) / 2;
-      // Modulate stroke width smoothly around baseWidth based on stylus pressure.
-      // Active stylus pressure typically ranges between 0.05 and 0.5.
-      // Scaling moderately around baseWidth ensures the toolbar stroke width setting
-      // directly determines the line thickness, while stylus pressure adds natural organic dynamics.
-      final pressureScale = (avgPressure > 0.0 && avgPressure != 1.0)
-          ? (0.75 + 0.5 * avgPressure.clamp(0.0, 1.0))
-          : 1.0;
-      paint.strokeWidth = math.max(0.5, baseWidth * pressureScale);
-      canvas.drawLine(p1.offset, p2.offset, paint);
+    if (tc != null) {
+      canvas.restore();
     }
   }
 
-  void _drawShape(
+  void _drawShapePreview(
     Canvas canvas,
     ShapeType type,
     Offset start,
@@ -1029,15 +1126,12 @@ class _EditorPainter extends CustomPainter {
       case ShapeType.rectangle:
         canvas.drawRect(rect, paint);
         break;
-
       case ShapeType.circle:
         canvas.drawOval(rect, paint);
         break;
-
       case ShapeType.line:
         canvas.drawLine(start, end, paint);
         break;
-
       case ShapeType.arrow:
         canvas.drawLine(start, end, paint);
         final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
@@ -1060,833 +1154,11 @@ class _EditorPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _EditorPainter oldDelegate) => true;
-}
-
-class _ShapeHandle extends StatelessWidget {
-  final Offset position;
-  final double touchSize;
-  final double visualSize;
-  final double borderWidth;
-  final void Function(DragStartDetails details)? onPanStart;
-  final void Function(DragUpdateDetails details) onPanUpdate;
-  final VoidCallback? onPanEnd;
-
-  const _ShapeHandle({
-    required this.position,
-    required this.touchSize,
-    required this.visualSize,
-    required this.borderWidth,
-    this.onPanStart,
-    required this.onPanUpdate,
-    this.onPanEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: position.dx - touchSize / 2,
-      top: position.dy - touchSize / 2,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanStart: onPanStart,
-        onPanUpdate: onPanUpdate,
-        onPanEnd: (_) => onPanEnd?.call(),
-        child: Container(
-          width: touchSize,
-          height: touchSize,
-          alignment: Alignment.center,
-          color: Colors.transparent,
-          child: Container(
-            width: visualSize,
-            height: visualSize,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF1976D2),
-                width: math.max(1.5, borderWidth),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 3.0,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SingleShapePainter extends CustomPainter {
-  final DrawnShape shape;
-  final bool isSelected;
-  final double kPadding;
-  final double scale;
-
-  _SingleShapePainter({
-    required this.shape,
-    required this.isSelected,
-    required this.kPadding,
-    required this.scale,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final minX = math.min(shape.start.dx, shape.end.dx);
-    final maxX = math.max(shape.start.dx, shape.end.dx);
-    final minY = math.min(shape.start.dy, shape.end.dy);
-    final maxY = math.max(shape.start.dy, shape.end.dy);
-    final width = maxX - minX;
-    final height = maxY - minY;
-
-    final localStart = Offset(
-      shape.start.dx - minX + kPadding,
-      shape.start.dy - minY + kPadding,
-    );
-    final localEnd = Offset(
-      shape.end.dx - minX + kPadding,
-      shape.end.dy - minY + kPadding,
-    );
-
-    final shapeRect = Rect.fromLTWH(kPadding, kPadding, width, height);
-
-    // 1. Draw selection highlight bounding box if selected
-    if (isSelected) {
-      final highlightPaint = Paint()
-        ..color = const Color(0xFF2196F3).withValues(alpha: 0.5)
-        ..strokeWidth = math.max(1.0, 1.5 / scale)
-        ..style = PaintingStyle.stroke;
-
-      final bounds = shapeRect.inflate(4.0 / scale);
-      canvas.drawRect(bounds, highlightPaint);
-    }
-
-    // 2. Draw the shape itself
-    final paint = Paint()
-      ..color = shape.color
-      ..strokeWidth = shape.strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    switch (shape.type) {
-      case ShapeType.rectangle:
-        canvas.drawRect(shapeRect, paint);
-        break;
-
-      case ShapeType.circle:
-        canvas.drawOval(shapeRect, paint);
-        break;
-
-      case ShapeType.line:
-        canvas.drawLine(localStart, localEnd, paint);
-        break;
-
-      case ShapeType.arrow:
-        canvas.drawLine(localStart, localEnd, paint);
-        final angle = math.atan2(localEnd.dy - localStart.dy, localEnd.dx - localStart.dx);
-        final arrowLength = math.max(shape.strokeWidth * 4.0, 12.0);
-        const arrowAngle = math.pi / 6;
-
-        final p1 = Offset(
-          localEnd.dx - arrowLength * math.cos(angle - arrowAngle),
-          localEnd.dy - arrowLength * math.sin(angle - arrowAngle),
-        );
-        final p2 = Offset(
-          localEnd.dx - arrowLength * math.cos(angle + arrowAngle),
-          localEnd.dy - arrowLength * math.sin(angle + arrowAngle),
-        );
-
-        canvas.drawLine(localEnd, p1, paint);
-        canvas.drawLine(localEnd, p2, paint);
-        break;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SingleShapePainter oldDelegate) {
-    return oldDelegate.shape.start != shape.start ||
-        oldDelegate.shape.end != shape.end ||
-        oldDelegate.shape.color != shape.color ||
-        oldDelegate.shape.strokeWidth != shape.strokeWidth ||
-        oldDelegate.isSelected != isSelected ||
-        oldDelegate.scale != scale;
-  }
-}
-
-class _ShapeWidget extends StatefulWidget {
-  final DrawnShape shape;
-  final bool isSelected;
-  final TransformationController? transformationController;
-  final VoidCallback onSelect;
-  final VoidCallback onDeselect;
-  final void Function(Offset newStart, Offset newEnd) onUpdate;
-  final void Function(Offset oldStart, Offset oldEnd) onModificationCommitted;
-  final VoidCallback onDelete;
-
-  const _ShapeWidget({
-    super.key,
-    required this.shape,
-    required this.isSelected,
-    this.transformationController,
-    required this.onSelect,
-    required this.onDeselect,
-    required this.onUpdate,
-    required this.onModificationCommitted,
-    required this.onDelete,
-  });
-
-  @override
-  State<_ShapeWidget> createState() => _ShapeWidgetState();
-}
-
-class _ShapeWidgetState extends State<_ShapeWidget> {
-  static const double kPadding = 48.0;
-
-  Offset? _dragStartOriginalStart;
-  Offset? _dragStartOriginalEnd;
-
-  void _startDrag() {
-    _dragStartOriginalStart = widget.shape.start;
-    _dragStartOriginalEnd = widget.shape.end;
-  }
-
-  void _endDrag() {
-    if (_dragStartOriginalStart != null && _dragStartOriginalEnd != null) {
-      widget.onModificationCommitted(_dragStartOriginalStart!, _dragStartOriginalEnd!);
-    }
-    _dragStartOriginalStart = null;
-    _dragStartOriginalEnd = null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final shape = widget.shape;
-    final minX = math.min(shape.start.dx, shape.end.dx);
-    final maxX = math.max(shape.start.dx, shape.end.dx);
-    final minY = math.min(shape.start.dy, shape.end.dy);
-    final maxY = math.max(shape.start.dy, shape.end.dy);
-    final width = maxX - minX;
-    final height = maxY - minY;
-
-    final boxWidth = width + kPadding * 2;
-    final boxHeight = height + kPadding * 2;
-
-    final scale = (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
-    final handleTouchSize = 40.0 / scale;
-    final handleVisualSize = 14.0 / scale;
-    final handleBorderWidth = 2.0 / scale;
-
-    final localStart = Offset(
-      shape.start.dx - minX + kPadding,
-      shape.start.dy - minY + kPadding,
-    );
-    final localEnd = Offset(
-      shape.end.dx - minX + kPadding,
-      shape.end.dy - minY + kPadding,
-    );
-
-    final isRectOrCircle = shape.type == ShapeType.rectangle || shape.type == ShapeType.circle;
-
-    Widget content = SizedBox(
-      width: boxWidth,
-      height: boxHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 1. Paint shape and selection border
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _SingleShapePainter(
-                shape: shape,
-                isSelected: widget.isSelected,
-                kPadding: kPadding,
-                scale: scale,
-              ),
-            ),
-          ),
-
-          // 2. Body interaction:
-          if (widget.isSelected)
-            Positioned(
-              left: kPadding,
-              top: kPadding,
-              width: math.max(width, 24.0),
-              height: math.max(height, 24.0),
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  widget.onUpdate(
-                    widget.shape.start + deltaDoc,
-                    widget.shape.end + deltaDoc,
-                  );
-                  setState(() {});
-                },
-                onPanEnd: (_) => _endDrag(),
-                child: const SizedBox.expand(),
-              ),
-            )
-          else
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTapDown: (details) {
-                  final local = details.localPosition;
-                  final docPos = Offset(minX - kPadding + local.dx, minY - kPadding + local.dy);
-                  if (DrawingController.isPointNearShape(docPos, widget.shape, 24.0)) {
-                    widget.onSelect();
-                  }
-                },
-                child: const SizedBox.expand(),
-              ),
-            ),
-
-          // 3. Handles and controls when selected
-          if (widget.isSelected) ...[
-            if (isRectOrCircle) ...[
-              // 4 Corner Handles: TL, TR, BL, BR
-              _ShapeHandle(
-                position: const Offset(kPadding, kPadding),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(newLeft, newTop), Offset(maxX, maxY));
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-              _ShapeHandle(
-                position: Offset(kPadding + width, kPadding),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(minX, newTop), Offset(newRight, maxY));
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-              _ShapeHandle(
-                position: Offset(kPadding, kPadding + height),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(newLeft, minY), Offset(maxX, newBottom));
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-              _ShapeHandle(
-                position: Offset(kPadding + width, kPadding + height),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(minX, minY), Offset(newRight, newBottom));
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-            ] else ...[
-              // Line / Arrow: 2 Endpoint Handles
-              _ShapeHandle(
-                position: localStart,
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  widget.onUpdate(widget.shape.start + deltaDoc, widget.shape.end);
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-              _ShapeHandle(
-                position: localEnd,
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
-                  widget.onUpdate(widget.shape.start, widget.shape.end + deltaDoc);
-                  setState(() {});
-                },
-                onPanEnd: _endDrag,
-              ),
-            ],
-          ],
-        ],
-      ),
-    );
-
-    if (widget.isSelected) {
-      return TapRegion(
-        groupId: kEditableElementRegionGroup,
-        onTapOutside: (_) => widget.onDeselect(),
-        child: content,
-      );
-    }
-
-    return content;
-  }
-}
-
-class _ImageWidget extends StatefulWidget {
-  final DrawnImage image;
-  final void Function(Offset newPos, double newW, double newH) onUpdate;
-  final VoidCallback onDelete;
-
-  const _ImageWidget({
-    required this.image,
-    required this.onUpdate,
-    required this.onDelete,
-  });
-
-  @override
-  State<_ImageWidget> createState() => _ImageWidgetState();
-}
-
-class _ImageWidgetState extends State<_ImageWidget> {
-  late Offset _position;
-  late double _width;
-  late double _height;
-  bool _isSelected = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _position = widget.image.position;
-    _width = widget.image.width;
-    _height = widget.image.height;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ImageWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.image.position != widget.image.position) {
-      _position = widget.image.position;
-    }
-    if (oldWidget.image.width != widget.image.width ||
-        oldWidget.image.height != widget.image.height) {
-      _width = widget.image.width;
-      _height = widget.image.height;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: _position.dx,
-      top: _position.dy,
-      child: GestureDetector(
-        onTap: () => setState(() => _isSelected = !_isSelected),
-        onPanUpdate: (details) {
-          setState(() {
-            _position += details.delta;
-          });
-          widget.onUpdate(_position, _width, _height);
-        },
-        child: Container(
-          width: _width,
-          height: _height,
-          decoration: BoxDecoration(
-            border: _isSelected
-                ? Border.all(color: Colors.blueAccent, width: 2)
-                : Border.all(color: Colors.transparent, width: 1),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: Image.memory(
-                    widget.image.imageBytes,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              if (_isSelected)
-                Positioned(
-                  top: -14,
-                  right: -14,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: widget.onDelete,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
-                      ),
-                      child: const Icon(Icons.close, size: 18, color: Colors.white),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextBoxWidget extends StatefulWidget {
-  final DrawnTextBox textBox;
-  final AppFontFamily textBoxFont;
-  final bool isEditing;
-  final VoidCallback onStartEditing;
-  final VoidCallback onFinishEditing;
-  final void Function(String newText, Offset newPosition, double newFontSize, double newWidth) onUpdate;
-  final VoidCallback onDelete;
-
-  const _TextBoxWidget({
-    super.key,
-    required this.textBox,
-    this.textBoxFont = AppFontFamily.sansSerif,
-    required this.isEditing,
-    required this.onStartEditing,
-    required this.onFinishEditing,
-    required this.onUpdate,
-    required this.onDelete,
-  });
-
-  @override
-  State<_TextBoxWidget> createState() => _TextBoxWidgetState();
-}
-
-class _TextBoxWidgetState extends State<_TextBoxWidget> {
-  late Offset _position;
-  late TextEditingController _textController;
-  late FocusNode _focusNode;
-  late double _fontSize;
-  late double _width;
-  bool _isDeleting = false;
-
-  String get _fontFamilyName {
-    switch (widget.textBoxFont) {
-      case AppFontFamily.serif:
-        return 'serif';
-      case AppFontFamily.monospace:
-        return 'monospace';
-      case AppFontFamily.sansSerif:
-        return 'sans-serif';
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _position = widget.textBox.position;
-    _fontSize = widget.textBox.fontSize;
-    _width = widget.textBox.width ?? 220.0;
-    _textController = TextEditingController(text: widget.textBox.text);
-    _focusNode = FocusNode();
-  }
-
-  void _commitAndFinish() {
-    if (_isDeleting || !widget.isEditing) return;
-    final text = _textController.text.trim();
-    if (text.isEmpty) {
-      _isDeleting = true;
-      _focusNode.unfocus();
-      widget.onDelete();
-    } else {
-      widget.onUpdate(text, _position, _fontSize, _width);
-      _focusNode.unfocus();
-      widget.onFinishEditing();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _TextBoxWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _position = widget.textBox.position;
-    _fontSize = widget.textBox.fontSize;
-    if (widget.textBox.width != null) {
-      _width = widget.textBox.width!;
-    }
-    if (oldWidget.textBox.text != widget.textBox.text &&
-        _textController.text != widget.textBox.text) {
-      _textController.text = widget.textBox.text;
-    }
-    if (oldWidget.isEditing && !widget.isEditing) {
-      final text = _textController.text.trim();
-      if (text.isNotEmpty) {
-        widget.textBox.text = text;
-        widget.textBox.fontSize = _fontSize;
-        widget.textBox.position = _position;
-        widget.textBox.width = _width;
-      }
-    }
-    if (!oldWidget.isEditing && widget.isEditing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _focusNode.requestFocus();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    _textController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.isEditing) {
-      final textInput = Container(
-        width: _width,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.96),
-          border: Border.all(
-            color: widget.textBox.color,
-            width: 2.0,
-          ),
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Top mini toolbar: Drag handle
-            Row(
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (details) {
-                    setState(() {
-                      _position += details.delta;
-                    });
-                    widget.onUpdate(_textController.text, _position, _fontSize, _width);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: widget.textBox.color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.drag_indicator_rounded, size: 14, color: widget.textBox.color),
-                        const SizedBox(width: 3),
-                        Text(
-                          'Drag',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: widget.textBox.color,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            TextField(
-              controller: _textController,
-              focusNode: _focusNode,
-              autofocus: true,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              cursorColor: widget.textBox.color,
-              style: TextStyle(
-                color: widget.textBox.color,
-                fontSize: _fontSize,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-                fontFamily: _fontFamilyName,
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-                border: InputBorder.none,
-                hintText: 'Type text...',
-                hintStyle: TextStyle(color: Colors.black38, fontSize: _fontSize),
-              ),
-              onChanged: (val) {
-                widget.onUpdate(val, _position, _fontSize, _width);
-              },
-            ),
-          ],
-        ),
-      );
-
-      return TapRegion(
-        groupId: kEditableElementRegionGroup,
-        onTapOutside: (_) => _commitAndFinish(),
-        child: Material(
-          color: Colors.transparent,
-          elevation: 0,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              textInput,
-              // Right-edge horizontal resize handle (generous 48px touch target, safe inside TapRegion)
-              Positioned(
-                right: -24,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _width = math.max(80.0, _width + details.delta.dx);
-                      });
-                      widget.onUpdate(_textController.text, _position, _fontSize, _width);
-                    },
-                    child: Container(
-                      width: 48,
-                      height: 56,
-                      alignment: Alignment.center,
-                      color: Colors.transparent,
-                      child: Container(
-                        width: 7,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: widget.textBox.color,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white, width: 1.5),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 1)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (widget.textBox.text.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // Viewing mode: Body pan gesture and Resize handle are separate siblings in the Stack
-    // to avoid gesture arena conflicts
-    final textContent = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onStartEditing,
-      onPanUpdate: (details) {
-        setState(() {
-          _position += details.delta;
-        });
-        widget.onUpdate(widget.textBox.text, _position, _fontSize, _width);
-      },
-      child: Container(
-        width: _width,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: widget.textBox.color.withValues(alpha: 0.3),
-            width: 1.0,
-          ),
-        ),
-        child: Text(
-          widget.textBox.text,
-          softWrap: true,
-          style: TextStyle(
-            color: widget.textBox.color,
-            fontSize: widget.textBox.fontSize,
-            fontWeight: FontWeight.w500,
-            height: 1.3,
-            fontFamily: _fontFamilyName,
-          ),
-        ),
-      ),
-    );
-
-    final resizeHandle = Positioned(
-      right: -24,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanUpdate: (details) {
-            setState(() {
-              _width = math.max(80.0, _width + details.delta.dx);
-            });
-            widget.onUpdate(widget.textBox.text, _position, _fontSize, _width);
-          },
-          child: Container(
-            width: 48,
-            height: 56,
-            alignment: Alignment.center,
-            color: Colors.transparent,
-            child: Container(
-              width: 7,
-              height: 28,
-              decoration: BoxDecoration(
-                color: widget.textBox.color.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.white, width: 1.5),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    return Material(
-      color: Colors.transparent,
-      elevation: 0,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          textContent,
-          resizeHandle,
-        ],
-      ),
-    );
+  bool shouldRepaint(covariant _ActiveAnnotationPainter oldDelegate) {
+    return oldDelegate.currentColor != currentColor ||
+        oldDelegate.currentStrokeWidth != currentStrokeWidth ||
+        oldDelegate.shapeType != shapeType ||
+        oldDelegate.transformationController != transformationController ||
+        oldDelegate.controller != controller;
   }
 }

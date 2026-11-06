@@ -30,6 +30,7 @@ class DrawnTextAnnotation {
   final List<Rect> rects;
   Color color;
   final int pageNumber;
+  Rect? _cachedBounds;
 
   DrawnTextAnnotation({
     String? id,
@@ -39,12 +40,22 @@ class DrawnTextAnnotation {
     required this.pageNumber,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
+  void invalidateBounds() {
+    _cachedBounds = null;
+  }
+
   Rect getBounds() {
-    if (rects.isEmpty) return Rect.zero;
+    final cached = _cachedBounds;
+    if (cached != null) return cached;
+    if (rects.isEmpty) {
+      _cachedBounds = Rect.zero;
+      return Rect.zero;
+    }
     Rect b = rects.first;
     for (int i = 1; i < rects.length; i++) {
       b = b.expandToInclude(rects[i]);
     }
+    _cachedBounds = b;
     return b;
   }
 }
@@ -65,6 +76,7 @@ class DrawingStroke {
   Color color;
   double strokeWidth;
   final int pageNumber;
+  Rect? _cachedBounds;
 
   DrawingStroke({
     String? id,
@@ -74,8 +86,17 @@ class DrawingStroke {
     required this.pageNumber,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
+  void invalidateBounds() {
+    _cachedBounds = null;
+  }
+
   Rect getBounds() {
-    if (points.isEmpty) return Rect.zero;
+    final cached = _cachedBounds;
+    if (cached != null) return cached;
+    if (points.isEmpty) {
+      _cachedBounds = Rect.zero;
+      return Rect.zero;
+    }
     double minX = points.first.offset.dx;
     double maxX = minX;
     double minY = points.first.offset.dy;
@@ -87,7 +108,9 @@ class DrawingStroke {
       if (p.dy < minY) minY = p.dy;
       if (p.dy > maxY) maxY = p.dy;
     }
-    return Rect.fromLTRB(minX, minY, maxX, maxY);
+    final b = Rect.fromLTRB(minX, minY, maxX, maxY);
+    _cachedBounds = b;
+    return b;
   }
 }
 

@@ -1,24 +1,139 @@
 package com.yin.pdfreor
 
 import android.content.Context
+import android.content.Intent
 import android.hardware.input.InputManager
+import android.net.Uri
+import android.os.Bundle
+import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Surface
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     private val STYLUS_CHANNEL = "com.yin.pdfreor/stylus"
+    private val INTENT_CHANNEL = "com.yin.pdfreor/intent"
+
     private var stylusChannel: MethodChannel? = null
+    private var intentChannel: MethodChannel? = null
     private var inputManager: InputManager? = null
+    private var stylusNotified = false
+    private var pendingPdfPath: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestHighRefreshRate()
+        handleIncomingIntent(intent, notifyLive = false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        requestHighRefreshRate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            requestHighRefreshRate()
+        }
+    }
+
+    private fun requestHighRefreshRate() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
+        try {
+            val currentDisplay = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                display
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay
+            } ?: return
+
+            val supportedModes = currentDisplay.supportedModes
+            if (supportedModes.isEmpty()) return
+
+            val activeMode = currentDisplay.mode
+            val bestMode = supportedModes
+                .filter {
+                    it.physicalWidth == activeMode.physicalWidth &&
+                        it.physicalHeight == activeMode.physicalHeight
+                }
+                .maxByOrNull { it.refreshRate }
+                ?: supportedModes.maxByOrNull { it.refreshRate }
+                ?: return
+
+            val params = window.attributes
+            if (params.preferredDisplayModeId != bestMode.modeId ||
+                params.preferredRefreshRate != bestMode.refreshRate
+            ) {
+                params.preferredDisplayModeId = bestMode.modeId
+                params.preferredRefreshRate = bestMode.refreshRate
+                window.attributes = params
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                bestMode.refreshRate > 60.5f
+            ) {
+                applySurfaceFrameRate(window?.decorView, bestMode.refreshRate)
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Unable to request high refresh rate: $e")
+        }
+    }
+
+    private fun applySurfaceFrameRate(view: View?, frameRate: Float) {
+        if (view == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return
+        if (view is SurfaceView) {
+            val surface = view.holder.surface
+            if (surface != null && surface.isValid) {
+                try {
+                    surface.setFrameRate(frameRate, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+                } catch (_: Exception) {}
+            }
+        } else if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                applySurfaceFrameRate(view.getChildAt(i), frameRate)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent, notifyLive = true)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        stylusNotified = false
+
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STYLUS_CHANNEL)
         stylusChannel = channel
+
+        val iChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INTENT_CHANNEL)
+        intentChannel = iChannel
+
+        iChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "consumeInitialPdfPath" -> {
+                    val path = pendingPdfPath
+                    pendingPdfPath = null
+                    result.success(path)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         inputManager = getSystemService(Context.INPUT_SERVICE) as? InputManager
         inputManager?.registerInputDeviceListener(this, null)
@@ -26,7 +141,9 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "isStylusConnected" -> {
-                    result.success(isStylusConnected())
+                    val connected = isStylusConnected()
+                    if (connected) stylusNotified = true
+                    result.success(connected)
                 }
                 "getClipboardImage" -> {
                     try {
@@ -37,9 +154,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                                 val item = clip.getItemAt(i)
                                 val uri = item.uri
                                 if (uri != null) {
-                                    val stream = contentResolver.openInputStream(uri)
-                                    val bytes = stream?.readBytes()
-                                    stream?.close()
+                                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                                     if (bytes != null && bytes.isNotEmpty()) {
                                         result.success(bytes)
                                         return@setMethodCallHandler
@@ -57,9 +172,9 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                     val url = call.argument<String>("url")
                     if (url != null) {
                         try {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(intent)
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(browserIntent)
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e("MainActivity", "Error opening URL: $e")
@@ -76,7 +191,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                         if (sm != null) {
                             for (vol in sm.storageVolumes) {
                                 val state = vol.state
-                                if (state == android.os.Environment.MEDIA_MOUNTED || state == android.os.Environment.MEDIA_MOUNTED_READ_ONLY) {
+                                if (state == Environment.MEDIA_MOUNTED || state == Environment.MEDIA_MOUNTED_READ_ONLY) {
                                     var path: String? = null
                                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                                         val dir = vol.directory
@@ -97,7 +212,6 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                             }
                         }
 
-                        // Also check getExternalFilesDirs to catch any secondary storage / SD cards
                         try {
                             val extDirs = getExternalFilesDirs(null)
                             if (extDirs != null) {
@@ -117,7 +231,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                         } catch (_: Exception) {}
 
                         if (list.isEmpty()) {
-                            list.add(android.os.Environment.getExternalStorageDirectory().absolutePath)
+                            list.add(Environment.getExternalStorageDirectory().absolutePath)
                         }
                         result.success(list)
                     } catch (e: Exception) {
@@ -130,6 +244,91 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                 }
             }
         }
+    }
+
+    private fun handleIncomingIntent(incoming: Intent?, notifyLive: Boolean) {
+        if (incoming == null) return
+        if (incoming.action != Intent.ACTION_VIEW) return
+        val uri = incoming.data ?: return
+
+        val resolvedPath = resolvePdfUriToPath(uri) ?: return
+        if (notifyLive && intentChannel != null) {
+            runOnUiThread {
+                intentChannel?.invokeMethod("onOpenExternalPdf", resolvedPath)
+            }
+        } else {
+            pendingPdfPath = resolvedPath
+        }
+    }
+
+    private fun resolvePdfUriToPath(uri: Uri): String? {
+        try {
+            if (uri.scheme == "file") {
+                val p = uri.path
+                if (!p.isNullOrBlank() && File(p).exists()) {
+                    return p
+                }
+            }
+
+            // Attempt direct storage path resolution for externalstorage DocumentsProvider
+            if (uri.scheme == "content" && DocumentsContract.isDocumentUri(this, uri)) {
+                if (uri.authority == "com.android.externalstorage.documents") {
+                    val docId = DocumentsContract.getDocumentId(uri)
+                    val split = docId.split(":")
+                    if (split.size >= 2) {
+                        val type = split[0]
+                        val relPath = split.subList(1, split.size).joinToString(":")
+                        val candidate = if (type.equals("primary", ignoreCase = true)) {
+                            "${Environment.getExternalStorageDirectory().absolutePath}/$relPath"
+                        } else {
+                            "/storage/$type/$relPath"
+                        }
+                        val f = File(candidate)
+                        if (f.exists() && f.canRead()) {
+                            return f.absolutePath
+                        }
+                    }
+                }
+            }
+
+            // Fallback: copy content:// stream to app cache while preserving display filename
+            if (uri.scheme == "content") {
+                var displayName: String? = null
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            displayName = cursor.getString(idx)
+                        }
+                    }
+                }
+                var safeName = (displayName ?: uri.lastPathSegment ?: "document.pdf")
+                    .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                    .trim()
+                if (safeName.isEmpty()) safeName = "document.pdf"
+                if (!safeName.lowercase().endsWith(".pdf")) {
+                    safeName = "$safeName.pdf"
+                }
+
+                val importDir = File(cacheDir, "external_pdfs")
+                if (!importDir.exists()) {
+                    importDir.mkdirs()
+                }
+                val destFile = File(importDir, safeName)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                        output.fd.sync()
+                    }
+                }
+                if (destFile.exists() && destFile.length() > 0L) {
+                    return destFile.absolutePath
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error resolving external PDF URI: $e")
+        }
+        return null
     }
 
     override fun onDestroy() {
@@ -149,6 +348,8 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     }
 
     private fun checkAndNotifyStylus() {
+        if (stylusNotified) return
+        stylusNotified = true
         runOnUiThread {
             stylusChannel?.invokeMethod("onStylusConnected", true)
         }
@@ -166,27 +367,33 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         }
     }
 
-    override fun onInputDeviceRemoved(deviceId: Int) {}
+    override fun onInputDeviceRemoved(deviceId: Int) {
+        if (!isStylusConnected()) {
+            stylusNotified = false
+        }
+    }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        val toolType = event.getToolType(0)
-        if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
-            checkAndNotifyStylus()
+        if (!stylusNotified) {
+            val toolType = event.getToolType(0)
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
+                checkAndNotifyStylus()
+            }
         }
         return super.dispatchGenericMotionEvent(event)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        val toolType = event.getToolType(0)
-        if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
-            checkAndNotifyStylus()
+        if (!stylusNotified) {
+            val toolType = event.getToolType(0)
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
+                checkAndNotifyStylus()
+            }
         }
         return super.dispatchTouchEvent(event)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Intercept vendor stylus button keycodes (Lenovo Pen Plus sends 600-604, 289, 290)
-        // Consuming them here prevents Android's ViewRootImpl input stage from stalling (ANR)
         val keyCode = event.keyCode
         val isLenovoPenKey = keyCode in 600..604 || keyCode == 289 || keyCode == 290 ||
                 keyCode == KeyEvent.KEYCODE_STYLUS_BUTTON_PRIMARY ||
@@ -195,7 +402,6 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                 keyCode == KeyEvent.KEYCODE_STYLUS_BUTTON_TAIL
 
         if (isLenovoPenKey) {
-            Log.d("PdfReorPen", "Pen Key: action=${event.action}, code=$keyCode, repeat=${event.repeatCount}")
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.repeatCount == 0) {
                     runOnUiThread {
@@ -207,7 +413,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                     stylusChannel?.invokeMethod("onStylusButtonUp", null)
                 }
             }
-            return true // Consume key event immediately! Prevents ANR!
+            return true
         }
         return super.dispatchKeyEvent(event)
     }

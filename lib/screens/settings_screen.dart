@@ -82,10 +82,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              PdfThumbnailService.instance.clearMemoryCache();
+            onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
+              await PdfThumbnailService.instance.clearAllCache();
+              if (!mounted) return;
+              ScaffoldMessenger.of(this.context).showSnackBar(
                 const SnackBar(
                   content: Text('Thumbnail cache cleared successfully'),
                   duration: Duration(seconds: 2),

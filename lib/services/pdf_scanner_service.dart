@@ -1,10 +1,13 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/pdf_file_info.dart';
+import 'pdf_export_service.dart';
 
 class PdfScannerService {
   static final PdfScannerService instance = PdfScannerService._internal();
@@ -58,7 +61,7 @@ class PdfScannerService {
         'folderSort': _folderSort,
         'fileSort': _fileSort,
       };
-      await file.writeAsString(jsonEncode(data));
+      await PdfExportService.atomicWriteString(file, jsonEncode(data));
     } catch (_) {}
   }
 
@@ -129,8 +132,17 @@ class PdfScannerService {
 
   Future<void> removeImportedFilePath(String path) async {
     await _ensureLibraryLoaded();
-    _importedFilePaths.remove(path);
-    await _saveLibrary();
+    if (_importedFilePaths.remove(path)) {
+      await _saveLibrary();
+    }
+  }
+
+  Future<void> renameImportedFilePath(String oldPath, String newPath) async {
+    await _ensureLibraryLoaded();
+    if (_importedFilePaths.remove(oldPath)) {
+      _importedFilePaths.add(newPath);
+      await _saveLibrary();
+    }
   }
 
   /// Check whether appropriate storage permissions are granted.
@@ -139,11 +151,9 @@ class PdfScannerService {
       return true;
     }
 
-    // On Android 11+ (API 30+), check manageExternalStorage first
     final isManageGranted = await Permission.manageExternalStorage.isGranted;
     if (isManageGranted) return true;
 
-    // For Android 10 and below, check general storage permission
     final isStorageGranted = await Permission.storage.isGranted;
     return isStorageGranted;
   }
@@ -154,11 +164,9 @@ class PdfScannerService {
       return true;
     }
 
-    // Try requesting manageExternalStorage first on modern Android
     var status = await Permission.manageExternalStorage.request();
     if (status.isGranted) return true;
 
-    // Fallback to storage permission
     status = await Permission.storage.request();
     return status.isGranted;
   }
@@ -173,7 +181,6 @@ class PdfScannerService {
     final directoriesToScan = <Directory>[];
 
     if (Platform.isAndroid) {
-      // 1. StorageManager volumes via native MethodChannel (includes internal and physical SD cards)
       try {
         final List<dynamic>? volumes =
             await _channel.invokeMethod<List<dynamic>>('getStorageVolumes');
@@ -189,14 +196,12 @@ class PdfScannerService {
         }
       } catch (_) {}
 
-      // 2. Primary emulated internal storage fallback if not already added
       final rootStorage = Directory('/storage/emulated/0');
       if (await rootStorage.exists() &&
           !directoriesToScan.any((d) => d.path == rootStorage.path)) {
         directoriesToScan.add(rootStorage);
       }
 
-      // 3. Extract volume roots from external storage directories (e.g. SD cards)
       try {
         final extDirs = await getExternalStorageDirectories();
         if (extDirs != null) {
@@ -213,7 +218,6 @@ class PdfScannerService {
         }
       } catch (_) {}
     } else {
-      // macOS, Windows, Linux, iOS
       final docDir = await getApplicationDocumentsDirectory();
       directoriesToScan.add(docDir);
       final downloadDir = await getDownloadsDirectory();
@@ -222,7 +226,6 @@ class PdfScannerService {
       }
     }
 
-    // 4. User-added custom folders
     await _ensureLibraryLoaded();
     for (final folderPath in _customFolders) {
       final dir = Directory(folderPath);
@@ -234,50 +237,40 @@ class PdfScannerService {
     return directoriesToScan;
   }
 
-  /// Scan storage for PDF files.
-  /// If [progressCallback] is provided, it will be invoked with progress updates or found count.
+  /// Scan storage for PDF files in a background isolate so UI stays 60/120fps smooth.
   Future<List<PdfFileInfo>> scanStorage({
     void Function(String currentFolder, int foundCount)? progressCallback,
   }) async {
-    final Map<String, PdfFileInfo> foundFiles = {};
     final directoriesToScan = await _getStorageDirectoriesToScan();
-
-    for (final dir in directoriesToScan) {
-      await _scanDirectoryRecursively(dir, foundFiles, progressCallback);
-    }
-
-    // Include manually imported files that still exist on disk
     await _ensureLibraryLoaded();
-    for (final filePath in _importedFilePaths) {
-      if (!foundFiles.containsKey(filePath)) {
-        final file = File(filePath);
-        if (await file.exists()) {
-          try {
-            foundFiles[filePath] = PdfFileInfo.fromFile(file);
-          } catch (_) {}
-        }
-      }
-    }
 
-    final resultList = foundFiles.values.toList();
-    // Default sort by last modified date descending (newest first)
-    resultList.sort((a, b) => b.lastModified.compareTo(a.lastModified));
+    final rootPaths = directoriesToScan.map((d) => d.path).toList();
+    final importedSnapshot = _importedFilePaths.toList();
+
+    progressCallback?.call('Scanning storage...', 0);
+
+    final resultList = await Isolate.run(
+      () => _scanPathsInBackground(rootPaths, importedSnapshot),
+    );
+
+    progressCallback?.call('Completed', resultList.length);
     return resultList;
   }
 
-  /// Scan a specific user-selected directory.
+  /// Scan a specific user-selected directory in a background isolate.
   Future<List<PdfFileInfo>> scanCustomDirectory(
     String directoryPath, {
     void Function(String currentFolder, int foundCount)? progressCallback,
   }) async {
     await addCustomFolder(directoryPath);
-    final Map<String, PdfFileInfo> foundFiles = {};
     final dir = Directory(directoryPath);
-    if (await dir.exists()) {
-      await _scanDirectoryRecursively(dir, foundFiles, progressCallback);
-    }
-    final resultList = foundFiles.values.toList();
-    resultList.sort((a, b) => b.lastModified.compareTo(a.lastModified));
+    if (!await dir.exists()) return [];
+
+    progressCallback?.call(directoryPath, 0);
+    final resultList = await Isolate.run(
+      () => _scanPathsInBackground([directoryPath], const []),
+    );
+    progressCallback?.call(directoryPath, resultList.length);
     return resultList;
   }
 
@@ -314,13 +307,12 @@ class PdfScannerService {
     }
   }
 
-  /// Safe recursive directory scanner with blacklists to avoid permission crashes and slow loops.
-  Future<void> _scanDirectoryRecursively(
-    Directory directory,
-    Map<String, PdfFileInfo> foundFiles,
-    void Function(String currentFolder, int foundCount)? progressCallback,
-  ) async {
-    final skipFolders = {
+  /// Pure isolate-safe recursive scanner using an O(1) `Queue<Directory>`.
+  static List<PdfFileInfo> _scanPathsInBackground(
+    List<String> rootPaths,
+    List<String> importedPaths,
+  ) {
+    const skipFolders = {
       'Android/data',
       'Android/obb',
       '.thumbnails',
@@ -330,20 +322,25 @@ class PdfScannerService {
       '.git',
     };
 
-    final queue = <Directory>[directory];
+    final Map<String, PdfFileInfo> foundFiles = {};
+    final Queue<Directory> queue = Queue<Directory>();
+
+    for (final root in rootPaths) {
+      final d = Directory(root);
+      if (d.existsSync()) {
+        queue.add(d);
+      }
+    }
+
+    final sep = Platform.pathSeparator;
 
     while (queue.isNotEmpty) {
-      final currentDir = queue.removeAt(0);
-      try {
-        progressCallback?.call(currentDir.path, foundFiles.length);
-      } catch (_) {}
-
+      final currentDir = queue.removeFirst();
       try {
         final entities = currentDir.listSync(followLinks: false);
         for (final entity in entities) {
           try {
             final path = entity.path;
-            final sep = Platform.pathSeparator;
             final lastIdx = path.lastIndexOf(sep);
             final basename = lastIdx != -1 ? path.substring(lastIdx + 1) : path;
 
@@ -351,13 +348,12 @@ class PdfScannerService {
             if (basename.startsWith('.')) continue;
 
             if (entity is File) {
-              if (path.toLowerCase().endsWith('.pdf')) {
+              if (path.length > 4 && path.substring(path.length - 4).toLowerCase() == '.pdf') {
                 if (!foundFiles.containsKey(path)) {
                   foundFiles[path] = PdfFileInfo.fromFile(entity);
                 }
               }
             } else if (entity is Directory) {
-              // Check if directory should be skipped
               bool shouldSkip = false;
               for (final skip in skipFolders) {
                 if (path.endsWith(skip) || path.contains('/$skip/')) {
@@ -369,13 +365,24 @@ class PdfScannerService {
                 queue.add(entity);
               }
             }
-          } catch (_) {
-            // Ignore any individual file error (e.g. unreadable file or invalid path)
-          }
+          } catch (_) {}
         }
-      } catch (_) {
-        // Skip unreadable directories
+      } catch (_) {}
+    }
+
+    for (final filePath in importedPaths) {
+      if (!foundFiles.containsKey(filePath)) {
+        try {
+          final file = File(filePath);
+          if (file.existsSync()) {
+            foundFiles[filePath] = PdfFileInfo.fromFile(file);
+          }
+        } catch (_) {}
       }
     }
+
+    final resultList = foundFiles.values.toList();
+    resultList.sort((a, b) => b.lastModified.compareTo(a.lastModified));
+    return resultList;
   }
 }
