@@ -106,6 +106,23 @@ class PdfTabManager extends ChangeNotifier {
     _persistTabs().ignore();
   }
 
+  void openMultipleTabs(List<PdfFileInfo> files, {String? activePath}) {
+    if (files.isEmpty) return;
+    for (final file in files) {
+      final existingIdx = _openTabs.indexWhere((t) => t.path == file.path);
+      if (existingIdx == -1) {
+        _openTabs.add(file);
+      }
+    }
+    final targetPath = activePath ?? files.first.path;
+    final targetIdx = _openTabs.indexWhere((t) => t.path == targetPath);
+    if (targetIdx != -1) {
+      _activeIndex = targetIdx;
+    }
+    notifyListeners();
+    _persistTabs().ignore();
+  }
+
   void setActiveIndex(int index) {
     if (index >= 0 && index < _openTabs.length && index != _activeIndex) {
       _activeIndex = index;

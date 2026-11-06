@@ -546,7 +546,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
     _pointerDownId = event.pointer;
     _longPressTimer?.cancel();
 
-    _longPressTimer = Timer(const Duration(milliseconds: 700), () {
+    _longPressTimer = Timer(const Duration(milliseconds: 500), () {
       if (_pointerDownScreenPos != null && !widget.hasActiveTextSelection) {
         widget.onNonTextLongPressed?.call(_pointerDownScreenPos!, docPos);
       }
@@ -556,7 +556,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   void _handlePointerMove(PointerMoveEvent event) {
     if (_pointerDownScreenPos != null && event.pointer == _pointerDownId) {
-      if ((event.position - _pointerDownScreenPos!).distance > 12.0) {
+      if ((event.position - _pointerDownScreenPos!).distance > kTouchSlop) {
         _longPressTimer?.cancel();
         _pointerDownScreenPos = null;
       }
@@ -607,14 +607,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         widget.controller.activeShapeStart != null ||
         _selectedStrokeId != null ||
         _selectedTextAnnotationId != null;
-
-    if (!hasAnnotations &&
-        widget.activeTool == EditorTool.select &&
-        widget.oneShotShape == null) {
-      // In select/reading mode with zero annotations, completely bypass all canvas gesture
-      // interceptors, timers, and Transform animations so 100% of touches go directly to SfPdfViewer at 120Hz/144Hz!
-      return const SizedBox.shrink();
-    }
 
     Widget content = Stack(
       fit: StackFit.expand,

@@ -63,8 +63,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _collapsedFolders = {};
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  PdfFileInfo? _clipboardFile;
+  List<PdfFileInfo> _clipboardFiles = [];
   bool _isCutMode = false;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedFilePaths = {};
 
   @override
   void initState() {
@@ -608,204 +610,401 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _copyFile(PdfFileInfo file) {
+  void _copySelectedFiles() {
+    final files = _allFiles.where((f) => _selectedFilePaths.contains(f.path)).toList();
+    if (files.isEmpty) return;
     setState(() {
-      _clipboardFile = file;
+      _clipboardFiles = files;
       _isCutMode = false;
+      _isSelectionMode = false;
+      _selectedFilePaths.clear();
     });
     HapticFeedback.selectionClick();
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Copied "${file.name}" to clipboard'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _cutFile(PdfFileInfo file) {
-    setState(() {
-      _clipboardFile = file;
-      _isCutMode = true;
-    });
-    HapticFeedback.selectionClick();
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Cut "${file.name}". Tap Paste to move here.'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _pasteFile({PdfFileInfo? targetFile}) async {
-    if (_clipboardFile == null) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Clipboard is empty. Copy or Cut a file first.'),
-          duration: Duration(seconds: 2),
+        content: Text(
+          files.length == 1
+              ? 'Copied "${files.first.name}" to clipboard'
+              : 'Copied ${files.length} files to clipboard',
         ),
-      );
-      return;
-    }
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
-    final sourcePath = _clipboardFile!.path;
-    final sourceFile = File(sourcePath);
-    if (!await sourceFile.exists()) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Source file no longer exists.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      setState(() {
-        _clipboardFile = null;
-        _isCutMode = false;
-      });
-      return;
-    }
+  void _cutSelectedFiles() {
+    final files = _allFiles.where((f) => _selectedFilePaths.contains(f.path)).toList();
+    if (files.isEmpty) return;
+    setState(() {
+      _clipboardFiles = files;
+      _isCutMode = true;
+      _isSelectionMode = false;
+      _selectedFilePaths.clear();
+    });
+    HapticFeedback.selectionClick();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          files.length == 1
+              ? 'Cut "${files.first.name}". Tap Paste on any folder banner.'
+              : 'Cut ${files.length} files. Tap Paste on any folder banner.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
-    final targetDir = targetFile != null
-        ? File(targetFile.path).parent
-        : sourceFile.parent;
+  Future<void> _pasteFilesToFolder(String targetFolderPath) async {
+    if (_clipboardFiles.isEmpty) return;
 
-    final baseName = p.basenameWithoutExtension(sourcePath);
-    final ext = p.extension(sourcePath);
-
-    try {
-      if (_isCutMode) {
-        final destPath = p.join(targetDir.path, p.basename(sourcePath));
-        if (destPath != sourcePath) {
-          String finalDestPath = destPath;
-          int counter = 1;
-          while (await File(finalDestPath).exists()) {
-            finalDestPath = p.join(targetDir.path, '$baseName ($counter)$ext');
-            counter++;
-          }
-          await sourceFile.copy(finalDestPath);
-          await sourceFile.delete();
-          PdfThumbnailService.instance.invalidate(sourcePath);
-          PdfTabManager.instance.closeTabByPath(sourcePath);
-        }
-        setState(() {
-          _clipboardFile = null;
-          _isCutMode = false;
-        });
-        await _startScan();
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('File moved successfully'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      } else {
-        String destPath = p.join(targetDir.path, '$baseName (Copy)$ext');
-        int counter = 2;
-        while (await File(destPath).exists()) {
-          destPath = p.join(targetDir.path, '$baseName (Copy $counter)$ext');
-          counter++;
-        }
-        await sourceFile.copy(destPath);
-        await _startScan();
+    final targetDir = Directory(targetFolderPath);
+    if (!await targetDir.exists()) {
+      try {
+        await targetDir.create(recursive: true);
+      } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Created copy: "${p.basename(destPath)}"'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
+              content: Text('Cannot write to folder: $e'),
+              backgroundColor: Colors.red,
             ),
           );
         }
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Paste operation failed: $e'),
-            backgroundColor: Colors.red,
+    }
+
+    int successCount = 0;
+    final isCut = _isCutMode;
+    final filesToProcess = List<PdfFileInfo>.from(_clipboardFiles);
+
+    for (final sourceInfo in filesToProcess) {
+      final sourcePath = sourceInfo.path;
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) continue;
+
+      final baseName = p.basenameWithoutExtension(sourcePath);
+      final ext = p.extension(sourcePath);
+
+      try {
+        if (isCut) {
+          final destPath = p.join(targetDir.path, p.basename(sourcePath));
+          if (destPath != sourcePath) {
+            String finalDestPath = destPath;
+            int counter = 1;
+            while (await File(finalDestPath).exists()) {
+              finalDestPath = p.join(targetDir.path, '$baseName ($counter)$ext');
+              counter++;
+            }
+            await sourceFile.copy(finalDestPath);
+            await sourceFile.delete();
+            PdfThumbnailService.instance.invalidate(sourcePath);
+            PdfTabManager.instance.closeTabByPath(sourcePath);
+            successCount++;
+          }
+        } else {
+          String destPath = p.join(targetDir.path, p.basename(sourcePath));
+          if (await File(destPath).exists()) {
+            destPath = p.join(targetDir.path, '$baseName (Copy)$ext');
+            int counter = 2;
+            while (await File(destPath).exists()) {
+              destPath = p.join(targetDir.path, '$baseName (Copy $counter)$ext');
+              counter++;
+            }
+          }
+          await sourceFile.copy(destPath);
+          successCount++;
+        }
+      } catch (_) {}
+    }
+
+    if (isCut) {
+      setState(() {
+        _clipboardFiles.clear();
+        _isCutMode = false;
+      });
+    }
+
+    await _startScan();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isCut
+                ? (successCount == 1 ? 'Moved 1 file successfully' : 'Moved $successCount files successfully')
+                : (successCount == 1 ? 'Copied 1 file successfully' : 'Copied $successCount files successfully'),
           ),
-        );
-      }
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
-  Future<void> _deleteFile(PdfFileInfo file) async {
+  void _onFileTap(PdfFileInfo file) {
+    if (_isSelectionMode) {
+      setState(() {
+        if (_selectedFilePaths.contains(file.path)) {
+          _selectedFilePaths.remove(file.path);
+          if (_selectedFilePaths.isEmpty) {
+            _isSelectionMode = false;
+          }
+        } else {
+          _selectedFilePaths.add(file.path);
+        }
+      });
+    } else {
+      _openPdfViewer(file);
+    }
+  }
+
+  void _onFileLongPress(PdfFileInfo file) {
     HapticFeedback.mediumImpact();
+    if (!_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = true;
+        _selectedFilePaths.add(file.path);
+      });
+    } else {
+      _showFileContextMenu(file);
+    }
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedFilePaths.clear();
+    });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectedFilePaths.length == _filteredFiles.length && _filteredFiles.isNotEmpty) {
+        _selectedFilePaths.clear();
+        _isSelectionMode = false;
+      } else {
+        _selectedFilePaths.clear();
+        _selectedFilePaths.addAll(_filteredFiles.map((f) => f.path));
+      }
+    });
+  }
+
+  void _openSelectedFilesInReader([PdfFileInfo? targetFile]) {
+    final selectedFiles = _allFiles
+        .where((f) => _selectedFilePaths.contains(f.path))
+        .toList();
+    if (targetFile != null && !selectedFiles.any((f) => f.path == targetFile.path)) {
+      selectedFiles.add(targetFile);
+    }
+    if (selectedFiles.isEmpty) return;
+
+    final activeFile = targetFile ?? selectedFiles.first;
+    PdfTabManager.instance.openMultipleTabs(selectedFiles, activePath: activeFile.path);
+    _exitSelectionMode();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PdfViewerScreen(file: activeFile),
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<void> _shareSelectedFiles() async {
+    final filesToShare = _allFiles
+        .where((f) => _selectedFilePaths.contains(f.path))
+        .map((f) => XFile(f.path))
+        .toList();
+    if (filesToShare.isEmpty) return;
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: filesToShare,
+          text: '${filesToShare.length} PDF files',
+        ),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _deleteSelectedFiles() async {
+    final count = _selectedFilePaths.length;
+    if (count == 0) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.delete_outline_rounded, color: Colors.red, size: 24),
-            SizedBox(width: 8),
-            Text('Delete File?'),
-          ],
-        ),
+      builder: (ctx) => AlertDialog(
+        title: Text(count == 1 ? 'Delete File' : 'Delete $count Files'),
         content: Text(
-          'Are you sure you want to delete "${file.name}"? This file will be permanently removed.',
+          count == 1
+              ? 'Are you sure you want to delete this PDF file from storage?'
+              : 'Are you sure you want to delete these $count PDF files from storage?',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      final f = File(file.path);
-      if (await f.exists()) {
-        await f.delete();
+    if (confirmed == true) {
+      for (final path in _selectedFilePaths.toList()) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.delete();
+          }
+          await _scannerService.removeImportedFilePath(path);
+          PdfThumbnailService.instance.invalidate(path);
+          PdfTabManager.instance.closeTabByPath(path);
+        } catch (_) {}
       }
-      await _scannerService.removeImportedFilePath(file.path);
-      PdfTabManager.instance.closeTabByPath(file.path);
-      PdfThumbnailService.instance.invalidate(file.path);
-      setState(() {
-        _allFiles.removeWhere((item) => item.path == file.path);
-        _applyFilterAndSort();
-        if (_clipboardFile?.path == file.path) {
-          _clipboardFile = null;
-          _isCutMode = false;
-        }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Deleted "${file.name}"'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+      _clipboardFiles.removeWhere((item) => _selectedFilePaths.contains(item.path));
+      if (_clipboardFiles.isEmpty) {
+        _isCutMode = false;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete file: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _exitSelectionMode();
+      await _startScan();
     }
+  }
+
+  void _showFileContextMenu(PdfFileInfo file) {
+    final theme = Theme.of(context);
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.picture_as_pdf_rounded,
+                          color: theme.colorScheme.primary,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              file.name,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${file.formattedSize} • ${file.parentDirectoryName}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.visibility_outlined),
+                  title: Text(
+                    _selectedFilePaths.length > 1
+                        ? 'Open Reader (${_selectedFilePaths.length})'
+                        : 'Open Reader',
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openSelectedFilesInReader(file);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.drive_file_rename_outline_rounded),
+                  title: const Text('Rename'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _promptRenameFile(file);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.open_in_new_rounded),
+                  title: const Text('Open with External App'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openExternal(file);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: Text(
+                    _selectedFilePaths.length > 1
+                        ? 'Share Selected (${_selectedFilePaths.length})'
+                        : 'Share',
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (_selectedFilePaths.length > 1) {
+                      _shareSelectedFiles();
+                    } else {
+                      _shareFile(file);
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('File Info'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showFileDetails(file);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -873,61 +1072,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String _getFolderSortLabel(FolderSortType type) {
-    switch (type) {
-      case FolderSortType.nameAsc:
-        return 'Folder A-Z';
-      case FolderSortType.nameDesc:
-        return 'Folder Z-A';
-      case FolderSortType.pathAsc:
-        return 'Path A-Z';
-      case FolderSortType.pathDesc:
-        return 'Path Z-A';
-      case FolderSortType.fileCountDesc:
-        return 'Most Files';
-      case FolderSortType.fileCountAsc:
-        return 'Fewest Files';
-      case FolderSortType.dateDesc:
-        return 'Newest Date';
-      case FolderSortType.dateAsc:
-        return 'Oldest Date';
-    }
-  }
-
-  PopupMenuItem<FolderSortType> _buildFolderSortMenuItem(
-    FolderSortType type,
-    IconData icon,
-    String text,
-  ) {
-    final isSelected = _folderSortType == type;
-    final theme = Theme.of(context);
-    return PopupMenuItem<FolderSortType>(
-      value: type,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? theme.colorScheme.primary : null,
-              ),
-            ),
-          ),
-          if (isSelected)
-            Icon(Icons.check_rounded, size: 18, color: theme.colorScheme.primary),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSortChip<T>({
     required T current,
     required T target,
@@ -957,9 +1101,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showSortOptionsSheet() {
     final theme = Theme.of(context);
-    final allFolderPaths = _sortedGroupedEntries.map((e) => e.key).toList();
-    final allCollapsed = allFolderPaths.isNotEmpty &&
-        allFolderPaths.every((p) => _collapsedFolders.contains(p));
 
     showModalBottomSheet(
       context: context,
@@ -993,36 +1134,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(Icons.tune_rounded, color: theme.colorScheme.primary, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          'Sort & Organization',
+                          'Sort Options',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-
-                    // Quick Folder Actions
-                    if (allFolderPaths.isNotEmpty) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                _toggleAllFolders(allFolderPaths);
-                                setSheetState(() {});
-                              },
-                              icon: Icon(
-                                allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
-                                size: 18,
-                              ),
-                              label: Text(allCollapsed ? 'Expand All Folders' : 'Collapse All Folders'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                    ],
+                    const SizedBox(height: 18),
 
                     // Folder Sorting Header
                     Row(
@@ -1241,8 +1360,190 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isSelectionMode && !_isSearching,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isSelectionMode) {
+          _exitSelectionMode();
+        } else if (_isSearching) {
+          setState(() {
+            _isSearching = false;
+            _searchController.clear();
+            _applyFilterAndSort();
+          });
+        }
+      },
+      child: Scaffold(
+        appBar: _isSelectionMode
+            ? AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: 'Exit Selection',
+                  onPressed: _exitSelectionMode,
+                ),
+                title: Container(
+                  width: 28,  // Square badge size
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1), // Background color
+                    border: Border.all(
+                      color: Colors.blue, // Border color
+                      width: 1.5,         // Border width
+                    ),
+                    borderRadius: BorderRadius.circular(6), // Border radius
+                  ),
+                  child: Text(
+                    '${_selectedFilePaths.length}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue, // Text color
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                actions: [
+                  IconButton(
+                    icon: Icon(
+                      _selectedFilePaths.length == _filteredFiles.length && _filteredFiles.isNotEmpty
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
+                    ),
+                    tooltip: _selectedFilePaths.length == _filteredFiles.length && _filteredFiles.isNotEmpty
+                        ? 'Deselect All'
+                        : 'Select All',
+                    onPressed: _toggleSelectAll,
+                  ),
+                  if (_selectedFilePaths.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded),
+                      tooltip: 'Copy',
+                      onPressed: _copySelectedFiles,
+                    ),
+                  if (_selectedFilePaths.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.content_cut_rounded),
+                      tooltip: 'Cut',
+                      onPressed: _cutSelectedFiles,
+                    ),
+                  if (_selectedFilePaths.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                      tooltip: 'Delete',
+                      onPressed: _deleteSelectedFiles,
+                    ),
+                  if (_selectedFilePaths.isNotEmpty)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert_rounded),
+                      tooltip: 'More Options',
+                      onSelected: (val) {
+                        final selectedFiles = _allFiles
+                            .where((f) => _selectedFilePaths.contains(f.path))
+                            .toList();
+                        if (selectedFiles.isEmpty) return;
+                        final singleFile = selectedFiles.first;
+                        switch (val) {
+                          case 'open':
+                            _openSelectedFilesInReader();
+                            break;
+                          case 'rename':
+                            _promptRenameFile(singleFile);
+                            break;
+                          case 'external':
+                            _openExternal(singleFile);
+                            break;
+                          case 'share':
+                            _shareSelectedFiles();
+                            break;
+                          case 'details':
+                            _showFileDetails(singleFile);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) {
+                        if (_selectedFilePaths.length == 1) {
+                          return const [
+                            PopupMenuItem(
+                              value: 'open',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility_outlined, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('Open Reader'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'rename',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.drive_file_rename_outline_rounded, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('Rename'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'external',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.open_in_new_rounded, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('Open with External App'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_outlined, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('Share'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'details',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.info_outline, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('File Info'),
+                                ],
+                              ),
+                            ),
+                          ];
+                        } else {
+                          return [
+                            PopupMenuItem(
+                              value: 'open',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.visibility_outlined, size: 18),
+                                  const SizedBox(width: 10),
+                                  Text('Open Reader (${_selectedFilePaths.length})'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_outlined, size: 18),
+                                  SizedBox(width: 10),
+                                  Text('Share Selected'),
+                                ],
+                              ),
+                            ),
+                          ];
+                        }
+                      },
+                    ),
+                ],
+              )
+            : AppBar(
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -1549,10 +1850,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddOptions,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add PDF'),
+      floatingActionButton: _isSelectionMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showAddOptions,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add PDF'),
+            ),
       ),
     );
   }
@@ -1647,94 +1951,47 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Spacer(),
-          // Folder Sort Quick Menu Button
-          PopupMenuButton<FolderSortType>(
-            tooltip: 'Folder Sort',
-            offset: const Offset(0, 36),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            initialValue: _folderSortType,
-            onSelected: _setFolderSort,
-            itemBuilder: (context) => [
-              _buildFolderSortMenuItem(FolderSortType.nameAsc, Icons.sort_by_alpha_rounded, 'Folder: A to Z'),
-              _buildFolderSortMenuItem(FolderSortType.nameDesc, Icons.sort_by_alpha_rounded, 'Folder: Z to A'),
-              const PopupMenuDivider(),
-              _buildFolderSortMenuItem(FolderSortType.pathAsc, Icons.folder_open_rounded, 'Path: A to Z'),
-              _buildFolderSortMenuItem(FolderSortType.pathDesc, Icons.folder_open_rounded, 'Path: Z to A'),
-              const PopupMenuDivider(),
-              _buildFolderSortMenuItem(FolderSortType.fileCountDesc, Icons.format_list_numbered_rounded, 'Files: Most First'),
-              _buildFolderSortMenuItem(FolderSortType.fileCountAsc, Icons.format_list_numbered_rounded, 'Files: Fewest First'),
-              const PopupMenuDivider(),
-              _buildFolderSortMenuItem(FolderSortType.dateDesc, Icons.calendar_today_rounded, 'Date: Newest First'),
-              _buildFolderSortMenuItem(FolderSortType.dateAsc, Icons.history_rounded, 'Date: Oldest First'),
-            ],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.sort_rounded,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _getFolderSortLabel(_folderSortType),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.primary,
+          // Fixed-size Collapse All / Expand All Toggle
+          SizedBox(
+            width: 100,
+            height: 28,
+            child: Material(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _toggleAllFolders(allFolderPaths),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                     ),
                   ),
-                  const SizedBox(width: 2),
-                  Icon(
-                    Icons.arrow_drop_down_rounded,
-                    size: 16,
-                    color: theme.colorScheme.primary,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 4),
+                      Text(
+                        allCollapsed ? 'Expand All' : 'Collapse All',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Collapse All / Expand All Toggle
-          InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => _toggleAllFolders(allFolderPaths),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
-                    size: 14,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    allCollapsed ? 'Expand All' : 'Collapse All',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
@@ -1811,6 +2068,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                if (_clipboardFiles.isNotEmpty) ...[
+                  IconButton(
+                    icon: Icon(
+                      Icons.paste_rounded,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    tooltip: _isCutMode ? 'Move files to this folder' : 'Paste files to this folder',
+                    onPressed: () => _pasteFilesToFolder(folderPath),
+                    style: IconButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(6),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -1946,17 +2220,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         key: ValueKey(file.path),
                         file: file,
                         isOpen: PdfTabManager.instance.isOpen(file.path),
-                        onTap: () => _openPdfViewer(file),
-                        onLongPress: () => _promptRenameFile(file),
-                        onRename: () => _promptRenameFile(file),
-                        onOpenExternal: () => _openExternal(file),
-                        onShare: () => _shareFile(file),
-                        onShowDetails: () => _showFileDetails(file),
-                        onDelete: () => _deleteFile(file),
-                        onCopy: () => _copyFile(file),
-                        onCut: () => _cutFile(file),
-                        onPaste: () => _pasteFile(targetFile: file),
-                        canPaste: _clipboardFile != null,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: _selectedFilePaths.contains(file.path),
+                        onTap: () => _onFileTap(file),
+                        onLongPress: () => _onFileLongPress(file),
                       );
                     },
                     childCount: entry.value.length,
@@ -1974,17 +2241,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         key: ValueKey(file.path),
                         file: file,
                         isOpen: PdfTabManager.instance.isOpen(file.path),
-                        onTap: () => _openPdfViewer(file),
-                        onLongPress: () => _promptRenameFile(file),
-                        onRename: () => _promptRenameFile(file),
-                        onOpenExternal: () => _openExternal(file),
-                        onShare: () => _shareFile(file),
-                        onShowDetails: () => _showFileDetails(file),
-                        onDelete: () => _deleteFile(file),
-                        onCopy: () => _copyFile(file),
-                        onCut: () => _cutFile(file),
-                        onPaste: () => _pasteFile(targetFile: file),
-                        canPaste: _clipboardFile != null,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: _selectedFilePaths.contains(file.path),
+                        onTap: () => _onFileTap(file),
+                        onLongPress: () => _onFileLongPress(file),
                       );
                     },
                     childCount: entry.value.length,

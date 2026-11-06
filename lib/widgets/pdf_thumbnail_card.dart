@@ -7,33 +7,19 @@ import '../services/pdf_thumbnail_service.dart';
 class PdfThumbnailCard extends StatefulWidget {
   final PdfFileInfo file;
   final bool isOpen;
+  final bool isSelectionMode;
+  final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  final VoidCallback? onRename;
-  final VoidCallback onOpenExternal;
-  final VoidCallback onShare;
-  final VoidCallback onShowDetails;
-  final VoidCallback? onDelete;
-  final VoidCallback? onCopy;
-  final VoidCallback? onCut;
-  final VoidCallback? onPaste;
-  final bool canPaste;
 
   const PdfThumbnailCard({
     super.key,
     required this.file,
     this.isOpen = false,
+    this.isSelectionMode = false,
+    this.isSelected = false,
     required this.onTap,
     this.onLongPress,
-    this.onRename,
-    required this.onOpenExternal,
-    required this.onShare,
-    required this.onShowDetails,
-    this.onDelete,
-    this.onCopy,
-    this.onCut,
-    this.onPaste,
-    this.canPaste = false,
   });
 
   @override
@@ -101,11 +87,13 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
           : theme.colorScheme.shadow.withValues(alpha: 0.15),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: widget.isOpen
-            ? const BorderSide(color: dodgerBlue, width: 2.5)
-            : BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
+        side: widget.isSelected
+            ? BorderSide(color: theme.colorScheme.primary, width: 2.5)
+            : widget.isOpen
+                ? const BorderSide(color: dodgerBlue, width: 2.5)
+                : BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -190,173 +178,27 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                       ),
                     ),
 
-                  // Overflow menu button (Half size with light blue outline)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: PopupMenuButton<String>(
-                      tooltip: 'More options',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 140),
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'open':
-                            widget.onTap();
-                            break;
-                          case 'copy':
-                            widget.onCopy?.call();
-                            break;
-                          case 'cut':
-                            widget.onCut?.call();
-                            break;
-                          case 'paste':
-                            widget.onPaste?.call();
-                            break;
-                          case 'rename':
-                            widget.onRename?.call();
-                            break;
-                          case 'external':
-                            widget.onOpenExternal();
-                            break;
-                          case 'share':
-                            widget.onShare();
-                            break;
-                          case 'details':
-                            widget.onShowDetails();
-                            break;
-                          case 'delete':
-                            widget.onDelete?.call();
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'open',
-                          child: Row(
-                            children: [
-                              Icon(Icons.visibility_outlined, size: 18),
-                              SizedBox(width: 8),
-                              Text('Open Reader'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'copy',
-                          child: Row(
-                            children: [
-                              Icon(Icons.copy_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Copy'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'cut',
-                          child: Row(
-                            children: [
-                              Icon(Icons.content_cut_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Cut'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'paste',
-                          enabled: widget.canPaste,
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.paste_rounded,
-                                size: 18,
-                                color: widget.canPaste ? null : Colors.grey,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Paste',
-                                style: TextStyle(
-                                  color: widget.canPaste ? null : Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuDivider(height: 10),
-                        const PopupMenuItem(
-                          value: 'rename',
-                          child: Row(
-                            children: [
-                              Icon(Icons.drive_file_rename_outline_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Rename'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'external',
-                          child: Row(
-                            children: [
-                              Icon(Icons.open_in_new_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Open with External App'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'share',
-                          child: Row(
-                            children: [
-                              Icon(Icons.share_outlined, size: 18),
-                              SizedBox(width: 8),
-                              Text('Share'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'details',
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, size: 18),
-                              SizedBox(width: 8),
-                              Text('File Info'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuDivider(height: 10),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('Delete', style: TextStyle(color: Colors.red)),
-                            ],
-                          ),
-                        ),
-                      ],
+                  // Selection indicator (only shown in selection mode)
+                  if (widget.isSelectionMode)
+                    Positioned(
+                      top: 6,
+                      right: 6,
                       child: Container(
-                        width: 22,
-                        height: 22,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
+                          color: widget.isSelected ? theme.colorScheme.primary : Colors.black45,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF90CAF9), // Light blue outline
-                            width: 1.2,
+                            color: Colors.white,
+                            width: 1.5,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.12),
-                              blurRadius: 3,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
                         ),
-                        child: const Center(
-                          child: Icon(Icons.more_vert, size: 13, color: Colors.black87),
-                        ),
+                        child: widget.isSelected
+                            ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                            : null,
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

@@ -7,33 +7,19 @@ import '../services/pdf_thumbnail_service.dart';
 class PdfListTile extends StatefulWidget {
   final PdfFileInfo file;
   final bool isOpen;
+  final bool isSelectionMode;
+  final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  final VoidCallback? onRename;
-  final VoidCallback onOpenExternal;
-  final VoidCallback onShare;
-  final VoidCallback onShowDetails;
-  final VoidCallback? onDelete;
-  final VoidCallback? onCopy;
-  final VoidCallback? onCut;
-  final VoidCallback? onPaste;
-  final bool canPaste;
 
   const PdfListTile({
     super.key,
     required this.file,
     this.isOpen = false,
+    this.isSelectionMode = false,
+    this.isSelected = false,
     required this.onTap,
     this.onLongPress,
-    this.onRename,
-    required this.onOpenExternal,
-    required this.onShare,
-    required this.onShowDetails,
-    this.onDelete,
-    this.onCopy,
-    this.onCut,
-    this.onPaste,
-    this.canPaste = false,
   });
 
   @override
@@ -99,11 +85,13 @@ class _PdfListTileState extends State<PdfListTile> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: widget.isOpen
-            ? const BorderSide(color: dodgerBlue, width: 2.2)
-            : BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-              ),
+        side: widget.isSelected
+            ? BorderSide(color: theme.colorScheme.primary, width: 2.2)
+            : widget.isOpen
+                ? const BorderSide(color: dodgerBlue, width: 2.2)
+                : BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -220,148 +208,26 @@ class _PdfListTileState extends State<PdfListTile> {
                 ),
               ),
 
-              // Trailing action menu
-              PopupMenuButton<String>(
-                icon: Icon(
-                  Icons.more_vert,
-                  color: theme.colorScheme.onSurfaceVariant,
+              // Selection indicator when in selection mode
+              if (widget.isSelectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 4),
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: widget.isSelected ? theme.colorScheme.primary : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: widget.isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: widget.isSelected
+                        ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                        : null,
+                  ),
                 ),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'open':
-                      widget.onTap();
-                      break;
-                    case 'copy':
-                      widget.onCopy?.call();
-                      break;
-                    case 'cut':
-                      widget.onCut?.call();
-                      break;
-                    case 'paste':
-                      widget.onPaste?.call();
-                      break;
-                    case 'rename':
-                      widget.onRename?.call();
-                      break;
-                    case 'external':
-                      widget.onOpenExternal();
-                      break;
-                    case 'share':
-                      widget.onShare();
-                      break;
-                    case 'details':
-                      widget.onShowDetails();
-                      break;
-                    case 'delete':
-                      widget.onDelete?.call();
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'open',
-                    child: Row(
-                      children: [
-                        Icon(Icons.visibility_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Open Reader'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'copy',
-                    child: Row(
-                      children: [
-                        Icon(Icons.copy_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Copy'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'cut',
-                    child: Row(
-                      children: [
-                        Icon(Icons.content_cut_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Cut'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'paste',
-                    enabled: widget.canPaste,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.paste_rounded,
-                          size: 18,
-                          color: widget.canPaste ? null : Colors.grey,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Paste',
-                          style: TextStyle(
-                            color: widget.canPaste ? null : Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(height: 10),
-                  const PopupMenuItem(
-                    value: 'rename',
-                    child: Row(
-                      children: [
-                        Icon(Icons.drive_file_rename_outline_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Rename'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'external',
-                    child: Row(
-                      children: [
-                        Icon(Icons.open_in_new_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Open with External App'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [
-                        Icon(Icons.share_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Share'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'details',
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 18),
-                        SizedBox(width: 8),
-                        Text('File Details'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(height: 10),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
