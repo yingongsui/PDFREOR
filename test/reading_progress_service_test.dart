@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfreor/screens/pdf_viewer_screen.dart';
 import 'package:pdfreor/services/reading_progress_service.dart';
+import 'package:pdfreor/widgets/pdf_fast_scrollbar.dart';
 
 void main() {
   group('ReadingProgressService', () {
@@ -97,6 +98,43 @@ void main() {
       expect(bodySavedOpen.zoom, closeTo(1.5, 1e-6));
       expect(bodySavedOpen.documentOffset.dx, closeTo(300.0, 1e-6));
       expect(bodySavedOpen.documentOffset.dy, closeTo(808.0, 1e-6));
+    });
+
+    test('PdfFastScrollbar computes thumb metrics and binary-searches pages accurately', () {
+      // 300-page document, each page 800pt tall with 6pt gap
+      final layouts = List<Rect>.generate(
+        300,
+        (i) => Rect.fromLTWH(0, i * 806.0, 600, 800),
+      );
+      final docHeight = layouts.last.bottom;
+
+      expect(PdfFastScrollbar.findPageAtDocumentY(layouts, 0), 1);
+      expect(PdfFastScrollbar.findPageAtDocumentY(layouts, 799), 1);
+      expect(PdfFastScrollbar.findPageAtDocumentY(layouts, 806 * 149 + 200), 150);
+      expect(PdfFastScrollbar.findPageAtDocumentY(layouts, docHeight), 300);
+
+      // Halfway scrolled in document
+      final maxDocScrollY = docHeight - 1000.0;
+      final midMetrics = PdfFastScrollbar.computeThumbMetrics(
+        viewportHeight: 800,
+        docHeight: docHeight,
+        visibleRect: Rect.fromLTWH(0, maxDocScrollY * 0.5, 600, 1000),
+        topPadding: 12,
+        bottomPadding: 12,
+        thumbHitHeight: 50,
+      );
+      expect(midMetrics, isNotNull);
+      expect(midMetrics!.fraction, closeTo(0.5, 1e-6));
+      expect(midMetrics.maxThumbTravel, closeTo(800 - 12 - 12 - 50, 1e-6));
+      expect(midMetrics.thumbTop, closeTo(12 + 0.5 * midMetrics.maxThumbTravel, 1e-6));
+
+      // Underflowing document hides scrollbar
+      final hiddenMetrics = PdfFastScrollbar.computeThumbMetrics(
+        viewportHeight: 800,
+        docHeight: 900,
+        visibleRect: const Rect.fromLTWH(0, 0, 600, 1000),
+      );
+      expect(hiddenMetrics, isNull);
     });
   });
 }

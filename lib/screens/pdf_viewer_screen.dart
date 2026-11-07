@@ -20,6 +20,7 @@ import '../services/reading_progress_service.dart';
 import '../widgets/pass_through_stack.dart';
 import '../widgets/pdf_annotation_property_bar.dart';
 import '../widgets/pdf_editor_canvas.dart';
+import '../widgets/pdf_fast_scrollbar.dart';
 import '../widgets/pdf_floating_toolbar.dart';
 import '../widgets/pdf_page_manager_dialog.dart';
 import '../widgets/pdf_thumbnails_sidebar.dart';
@@ -673,6 +674,10 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   late final pdfrx.PdfViewerController _pdfViewerController;
   late final TransformationController _transformationController;
+  final GlobalKey<PdfFastScrollbarState> _fastScrollbarKey = GlobalKey<PdfFastScrollbarState>();
+  int? _edgeTapPointerId;
+  Offset? _edgeTapDownPos;
+  Duration? _edgeTapDownTime;
   late DrawingController _drawingController;
   late File _pdfFile;
   late pdfrx.PdfDocumentRefFile _documentRef;
@@ -2220,9 +2225,40 @@ class PdfTabContentState extends State<PdfTabContent> {
                         _baseNormalizedWidth = newSize.width;
                       }
                     }
-                    return PassThroughStack(
-                      fit: StackFit.expand,
-                      children: [
+                    return Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (event) {
+                        final isStylus = event.kind == PointerDeviceKind.stylus ||
+                            event.kind == PointerDeviceKind.invertedStylus;
+                        final nearHorizontalEdge = event.localPosition.dx >= newSize.width - 42.0 ||
+                            event.localPosition.dx <= 28.0;
+                        if (!isStylus && nearHorizontalEdge) {
+                          _edgeTapPointerId = event.pointer;
+                          _edgeTapDownPos = event.localPosition;
+                          _edgeTapDownTime = event.timeStamp;
+                        }
+                      },
+                      onPointerUp: (event) {
+                        if (event.pointer == _edgeTapPointerId) {
+                          final downPos = _edgeTapDownPos;
+                          final downTime = _edgeTapDownTime;
+                          _edgeTapPointerId = null;
+                          if (downPos != null &&
+                              downTime != null &&
+                              (event.localPosition - downPos).distance <= 10.0 &&
+                              (event.timeStamp - downTime) <= const Duration(milliseconds: 260)) {
+                            _fastScrollbarKey.currentState?.reveal(withHaptic: true);
+                          }
+                        }
+                      },
+                      onPointerCancel: (event) {
+                        if (event.pointer == _edgeTapPointerId) {
+                          _edgeTapPointerId = null;
+                        }
+                      },
+                      child: PassThroughStack(
+                        fit: StackFit.expand,
+                        children: [
                         RepaintBoundary(
                           child: pdfrx.PdfViewer(
                             _documentRef,
@@ -2390,9 +2426,24 @@ class PdfTabContentState extends State<PdfTabContent> {
                           ),
                         ),
                       ],
+                      ),
                     );
                   },
                 ),
+                if (_isDocumentLoaded)
+                  Positioned.fill(
+                    child: PdfFastScrollbar(
+                      key: _fastScrollbarKey,
+                      controller: _pdfViewerController,
+                      onPageScrubbed: _onPdfPageChanged,
+                      bottomPadding: (selectedTextAnnotation != null ||
+                              selectedShape != null ||
+                              selectedStroke != null ||
+                              editingTextBox != null)
+                          ? 76.0
+                          : 12.0,
+                    ),
+                  ),
                 if (_selectedText != null)
                   ValueListenableBuilder<Rect?>(
                     valueListenable: _textSelectionLocalRectNotifier,
