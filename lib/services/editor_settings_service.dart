@@ -8,8 +8,42 @@ import 'pdf_export_service.dart';
 enum AppFontFamily {
   sansSerif, // Sans-Serif (Modern / HeiTi / Noto Sans / Helvetica)
   serif,     // Serif (Classical / SongTi / Mincho / Times Roman)
-  monospace, // Monospace (Code / Courier)
+  monospace; // Monospace (Code / Courier)
+
+  String get cssFontFamily {
+    switch (this) {
+      case AppFontFamily.serif:
+        return 'serif';
+      case AppFontFamily.monospace:
+        return 'monospace';
+      case AppFontFamily.sansSerif:
+        return 'sans-serif';
+    }
+  }
 }
+
+const List<String> kDefaultLatexOperators = [
+  r'\frac{a}{b}',
+  r'\sqrt{x}',
+  r'^{2}',
+  r'_{i}',
+  r'\pm',
+  r'\times',
+  r'\div',
+  r'\neq',
+  r'\leq',
+  r'\geq',
+  r'\approx',
+  r'\infty',
+  r'\pi',
+  r'\alpha',
+  r'\beta',
+  r'\theta',
+  r'\sum_{i=1}^{n}',
+  r'\int_{a}^{b}',
+  r'\partial',
+  r'\Delta',
+];
 
 class EditorSettings {
   final Color activeColor;
@@ -21,6 +55,7 @@ class EditorSettings {
   final double toolbarPositionY;
   final bool toolbarCollapsed;
   final AppFontFamily textBoxFont;
+  final List<String> latexQuickOperators;
 
   const EditorSettings({
     this.activeColor = const Color(0xFF212121),
@@ -32,6 +67,7 @@ class EditorSettings {
     this.toolbarPositionY = 100.0,
     this.toolbarCollapsed = false,
     this.textBoxFont = AppFontFamily.sansSerif,
+    this.latexQuickOperators = kDefaultLatexOperators,
   });
 
   EditorSettings copyWith({
@@ -44,6 +80,7 @@ class EditorSettings {
     double? toolbarPositionY,
     bool? toolbarCollapsed,
     AppFontFamily? textBoxFont,
+    List<String>? latexQuickOperators,
   }) {
     return EditorSettings(
       activeColor: activeColor ?? this.activeColor,
@@ -55,6 +92,7 @@ class EditorSettings {
       toolbarPositionY: toolbarPositionY ?? this.toolbarPositionY,
       toolbarCollapsed: toolbarCollapsed ?? this.toolbarCollapsed,
       textBoxFont: textBoxFont ?? this.textBoxFont,
+      latexQuickOperators: latexQuickOperators ?? this.latexQuickOperators,
     );
   }
 
@@ -68,6 +106,7 @@ class EditorSettings {
         'toolbarPositionY': toolbarPositionY,
         'toolbarCollapsed': toolbarCollapsed,
         'textBoxFont': textBoxFont.index,
+        'latexQuickOperators': latexQuickOperators,
       };
 
   factory EditorSettings.fromJson(Map<String, dynamic> json) {
@@ -93,6 +132,9 @@ class EditorSettings {
               (json['textBoxFont'] as int) < AppFontFamily.values.length
           ? AppFontFamily.values[json['textBoxFont'] as int]
           : AppFontFamily.sansSerif,
+      latexQuickOperators: json['latexQuickOperators'] != null
+          ? List<String>.from(json['latexQuickOperators'] as List)
+          : kDefaultLatexOperators,
     );
   }
 }

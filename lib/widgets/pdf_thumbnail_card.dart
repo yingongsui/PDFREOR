@@ -229,11 +229,16 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(width: 4),
                       const Spacer(),
-                      Text(
-                        dateFormat.format(widget.file.lastModified),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      Flexible(
+                        child: Text(
+                          dateFormat.format(widget.file.lastModified),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],

@@ -198,35 +198,14 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
   }
 
   Widget _buildShapeBarContent(DrawnShape shape, ThemeData theme) {
-    IconData shapeIcon;
-    String shapeName;
-    switch (shape.type) {
-      case ShapeType.rectangle:
-        shapeIcon = Icons.rectangle_outlined;
-        shapeName = 'Rectangle';
-        break;
-      case ShapeType.circle:
-        shapeIcon = Icons.circle_outlined;
-        shapeName = 'Circle';
-        break;
-      case ShapeType.line:
-        shapeIcon = Icons.horizontal_rule_rounded;
-        shapeName = 'Line';
-        break;
-      case ShapeType.arrow:
-        shapeIcon = Icons.arrow_forward_rounded;
-        shapeName = 'Arrow';
-        break;
-    }
-
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(shapeIcon, size: 18, color: theme.colorScheme.primary),
+        Icon(shape.type.icon, size: 18, color: theme.colorScheme.primary),
         const SizedBox(width: 6),
         Text(
-          shapeName,
+          shape.type.label,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.bold,

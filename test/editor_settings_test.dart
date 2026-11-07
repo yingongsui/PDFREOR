@@ -9,11 +9,13 @@ void main() {
     expect(defaultSettings.activeColor, const Color(0xFF212121));
     expect(defaultSettings.activeStrokeWidth, 3.0);
     expect(defaultSettings.activeShape, ShapeType.rectangle);
+    expect(defaultSettings.latexQuickOperators.isNotEmpty, true);
 
     final modified = defaultSettings.copyWith(
       activeColor: const Color(0xFF2196F3),
       activeStrokeWidth: 5.5,
       activeShape: ShapeType.arrow,
+      latexQuickOperators: [r'\sum', r'\int', r'\alpha'],
     );
 
     final json = modified.toJson();
@@ -22,6 +24,7 @@ void main() {
     expect(restored.activeColor.toARGB32(), const Color(0xFF2196F3).toARGB32());
     expect(restored.activeStrokeWidth, 5.5);
     expect(restored.activeShape, ShapeType.arrow);
+    expect(restored.latexQuickOperators, [r'\sum', r'\int', r'\alpha']);
   });
 }
 

@@ -1,21 +1,84 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui';
+import 'package:flutter/material.dart';
 
 enum EditorTool {
   select, // Navigation & text selection
-  highlight, // Text highlight
-  underline, // Text underline
   pen, // Freehand stylus / pen drawing
   eraser, // Stroke eraser (erases whole continuous stroke)
   shape, // Geometric shapes (rectangle, circle, line, arrow)
   textBox, // Add text box
+  latexBox, // Add LaTeX math formula box
 }
 
 enum ShapeType {
   rectangle,
   circle,
   line,
-  arrow,
+  arrow;
+
+  IconData get icon {
+    switch (this) {
+      case ShapeType.rectangle:
+        return Icons.rectangle_outlined;
+      case ShapeType.circle:
+        return Icons.circle_outlined;
+      case ShapeType.line:
+        return Icons.horizontal_rule_rounded;
+      case ShapeType.arrow:
+        return Icons.arrow_forward_rounded;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case ShapeType.rectangle:
+        return 'Rectangle';
+      case ShapeType.circle:
+        return 'Circle';
+      case ShapeType.line:
+        return 'Line';
+      case ShapeType.arrow:
+        return 'Arrow';
+    }
+  }
+}
+
+void paintShapeOnCanvas(
+  Canvas canvas,
+  ShapeType type,
+  Offset start,
+  Offset end,
+  Paint paint,
+) {
+  final rect = Rect.fromPoints(start, end);
+  switch (type) {
+    case ShapeType.rectangle:
+      canvas.drawRect(rect, paint);
+      break;
+    case ShapeType.circle:
+      canvas.drawOval(rect, paint);
+      break;
+    case ShapeType.line:
+      canvas.drawLine(start, end, paint);
+      break;
+    case ShapeType.arrow:
+      canvas.drawLine(start, end, paint);
+      final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
+      final arrowLength = math.max(paint.strokeWidth * 4.0, 12.0);
+      const arrowAngle = math.pi / 6;
+      final p1 = Offset(
+        end.dx - arrowLength * math.cos(angle - arrowAngle),
+        end.dy - arrowLength * math.sin(angle - arrowAngle),
+      );
+      final p2 = Offset(
+        end.dx - arrowLength * math.cos(angle + arrowAngle),
+        end.dy - arrowLength * math.sin(angle + arrowAngle),
+      );
+      canvas.drawLine(end, p1, paint);
+      canvas.drawLine(end, p2, paint);
+      break;
+  }
 }
 
 enum TextAnnotationType {
@@ -142,6 +205,9 @@ class DrawnTextBox {
   Color color;
   final int pageNumber;
   double? width;
+  final bool isLatex;
+  Uint8List? renderedImageBytes;
+  Size? renderedSize;
 
   DrawnTextBox({
     required this.id,
@@ -151,6 +217,9 @@ class DrawnTextBox {
     required this.color,
     required this.pageNumber,
     this.width,
+    this.isLatex = false,
+    this.renderedImageBytes,
+    this.renderedSize,
   });
 }
 

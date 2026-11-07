@@ -569,10 +569,30 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                               // Tool: Shapes (Pops up adjacent to button)
                               Builder(
                                 builder: (btnContext) => _buildToolButton(
-                                  icon: _getShapeIcon(widget.activeShape),
+                                  icon: widget.activeShape.icon,
                                   tooltip: 'Shapes',
                                   isSelected: widget.activeTool == EditorTool.shape,
                                   onPressed: () => _showShapePicker(btnContext),
+                                ),
+                              ),
+
+                              // Tool: Text Box
+                              Builder(
+                                builder: (btnContext) => _buildToolButton(
+                                  icon: Icons.title_rounded,
+                                  tooltip: 'Text Box (Add Text)',
+                                  isSelected: widget.activeTool == EditorTool.textBox,
+                                  onPressed: () => widget.onToolSelected(EditorTool.textBox),
+                                ),
+                              ),
+
+                              // Tool: LaTeX Box (Math Formula)
+                              Builder(
+                                builder: (btnContext) => _buildToolButton(
+                                  icon: Icons.functions_rounded,
+                                  tooltip: 'LaTeX Box (Math Formula)',
+                                  isSelected: widget.activeTool == EditorTool.latexBox,
+                                  onPressed: () => widget.onToolSelected(EditorTool.latexBox),
                                 ),
                               ),
 
@@ -788,18 +808,5 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
           ),
       ],
     );
-  }
-
-  IconData _getShapeIcon(ShapeType type) {
-    switch (type) {
-      case ShapeType.rectangle:
-        return Icons.rectangle_outlined;
-      case ShapeType.circle:
-        return Icons.circle_outlined;
-      case ShapeType.line:
-        return Icons.horizontal_rule_rounded;
-      case ShapeType.arrow:
-        return Icons.arrow_forward_rounded;
-    }
   }
 }

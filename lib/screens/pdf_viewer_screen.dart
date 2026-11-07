@@ -159,12 +159,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
         );
       },
       transitionBuilder: (context, anim1, anim2, child) {
-        final curved = CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic);
         return SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(1.0, 0.0),
             end: Offset.zero,
-          ).animate(curved),
+          ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(anim1),
           child: child,
         );
       },
@@ -188,8 +187,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
 
     if (PdfTabManager.instance.tabCount == 0 && mounted) {
       Navigator.of(context).pop();
-    } else {
-      setState(() {});
     }
   }
 
@@ -434,7 +431,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                   ? PdfTabContent(
                       key: _tabKeys.putIfAbsent(tabs[i].path, () => GlobalKey<PdfTabContentState>()),
                       file: tabs[i],
-                      isActive: i == activeIdx,
                       initialStylusConnected: _isStylusConnectedCache,
                       onDirtyChanged: () {
                         if (mounted) setState(() {});
@@ -568,7 +564,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
 
 class PdfTabContent extends StatefulWidget {
   final PdfFileInfo file;
-  final bool isActive;
   final bool initialStylusConnected;
   final VoidCallback? onDirtyChanged;
   final void Function(int currentPage, int totalPages)? onPageInfoChanged;
@@ -576,7 +571,6 @@ class PdfTabContent extends StatefulWidget {
   const PdfTabContent({
     super.key,
     required this.file,
-    this.isActive = true,
     this.initialStylusConnected = false,
     this.onDirtyChanged,
     this.onPageInfoChanged,
@@ -727,29 +721,26 @@ class PdfTabContentState extends State<PdfTabContent> {
   String? _selectedShapeId;
   String? _selectedStrokeId;
   final List<Rect> _pageDocBounds = [];
-  Rect? _textSelectionLocalRect;
+  final ValueNotifier<Rect?> _textSelectionLocalRectNotifier = ValueNotifier<Rect?>(null);
   Rect? _selectedUnionPdfrxDocRect;
   Map<int, List<Rect>> _selectedPageDocRects = const {};
   String? _selectedText;
   bool _isDraggingSelectionHandle = false;
   int _selectionSyncSerial = 0;
+  double _lastReportedZoom = -1.0;
 
   bool get _isEraserActive => _isHardwareButtonPressed || _isPointerButtonPressed;
 
   bool get _shouldEnableTextSelection {
     if (_oneShotShape != null) return false;
     if (_stylusOnlyMode || _isStylusDetected) return true;
-    return _activeTool == EditorTool.select ||
-        _activeTool == EditorTool.highlight ||
-        _activeTool == EditorTool.underline;
+    return _activeTool == EditorTool.select;
   }
 
   bool get _shouldAllowViewerPan {
     if (_oneShotShape != null) return false;
     if (_stylusOnlyMode) return true;
-    return _activeTool == EditorTool.select ||
-        _activeTool == EditorTool.highlight ||
-        _activeTool == EditorTool.underline;
+    return _activeTool == EditorTool.select;
   }
 
   bool get _hasUnsavedChanges {
@@ -770,18 +761,49 @@ class PdfTabContentState extends State<PdfTabContent> {
   bool _stylusOnlyMode = false;
   AppFontFamily _textBoxFont = AppFontFamily.sansSerif;
 
+  void _applyEditorSettings(EditorSettings s) {
+    _activeColor = s.activeColor;
+    _highlightColor = s.highlightColor;
+    _underlineColor = s.underlineColor;
+    _activeStrokeWidth = s.activeStrokeWidth;
+    _activeShape = s.activeShape;
+    _toolbarPosition = Offset(s.toolbarPositionX, s.toolbarPositionY);
+    _toolbarCollapsed = s.toolbarCollapsed;
+    _textBoxFont = s.textBoxFont;
+  }
+
+  void _onExternalSettingsChanged() {
+    if (!mounted) return;
+    final s = EditorSettingsService.settingsNotifier.value;
+    if (_textBoxFont != s.textBoxFont ||
+        _activeColor != s.activeColor ||
+        _highlightColor != s.highlightColor ||
+        _underlineColor != s.underlineColor ||
+        _activeStrokeWidth != s.activeStrokeWidth ||
+        _activeShape != s.activeShape ||
+        _toolbarCollapsed != s.toolbarCollapsed) {
+      setState(() {
+        _applyEditorSettings(s);
+      });
+    } else {
+      _toolbarPosition = Offset(s.toolbarPositionX, s.toolbarPositionY);
+    }
+  }
+
   void _saveSettings() {
-    EditorSettingsService.saveSettings(EditorSettings(
-      activeColor: _activeColor,
-      highlightColor: _highlightColor,
-      underlineColor: _underlineColor,
-      activeStrokeWidth: _activeStrokeWidth,
-      activeShape: _activeShape,
-      toolbarPositionX: _toolbarPosition.dx,
-      toolbarPositionY: _toolbarPosition.dy,
-      toolbarCollapsed: _toolbarCollapsed,
-      textBoxFont: _textBoxFont,
-    ));
+    EditorSettingsService.saveSettings(
+      EditorSettingsService.settingsNotifier.value.copyWith(
+        activeColor: _activeColor,
+        highlightColor: _highlightColor,
+        underlineColor: _underlineColor,
+        activeStrokeWidth: _activeStrokeWidth,
+        activeShape: _activeShape,
+        toolbarPositionX: _toolbarPosition.dx,
+        toolbarPositionY: _toolbarPosition.dy,
+        toolbarCollapsed: _toolbarCollapsed,
+        textBoxFont: _textBoxFont,
+      ),
+    );
   }
 
   // Pending page manager operations
@@ -808,6 +830,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     _pagesCount = math.max(1, _initialPageNumber);
     _drawingController = DrawingController();
     _drawingController.addListener(_onDrawingControllerChanged);
+    EditorSettingsService.settingsNotifier.addListener(_onExternalSettingsChanged);
 
     if (widget.initialStylusConnected) {
       _isStylusDetected = true;
@@ -818,14 +841,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     EditorSettingsService.loadSettings().then((s) {
       if (mounted) {
         setState(() {
-          _activeColor = s.activeColor;
-          _highlightColor = s.highlightColor;
-          _underlineColor = s.underlineColor;
-          _activeStrokeWidth = s.activeStrokeWidth;
-          _activeShape = s.activeShape;
-          _toolbarPosition = Offset(s.toolbarPositionX, s.toolbarPositionY);
-          _toolbarCollapsed = s.toolbarCollapsed;
-          _textBoxFont = s.textBoxFont;
+          _applyEditorSettings(s);
         });
       }
     });
@@ -850,7 +866,9 @@ class PdfTabContentState extends State<PdfTabContent> {
     ReadingProgressService.instance.flush().ignore();
     _originalBaseBytes = null;
     _loadingWatchdogTimer?.cancel();
+    EditorSettingsService.settingsNotifier.removeListener(_onExternalSettingsChanged);
     _pdfViewerController.removeListener(_onPdfMatrixChanged);
+    _textSelectionLocalRectNotifier.dispose();
     _transformationController.dispose();
     _drawingController.removeListener(_onDrawingControllerChanged);
     _drawingController.dispose();
@@ -944,21 +962,26 @@ class PdfTabContentState extends State<PdfTabContent> {
   void _onPdfMatrixChanged() {
     if (!mounted || !_pdfViewerController.isReady) return;
     _syncTransformationMatrix();
+    if (_isDocumentLoaded) {
+      final zoom = _pdfViewerController.currentZoom;
+      if (zoom > 0.2 && (zoom - _lastReportedZoom).abs() >= 0.005) {
+        _lastReportedZoom = zoom;
+        ReadingProgressService.instance.saveLastZoom(widget.file.path, zoom);
+      }
+    }
     if (!_isDraggingSelectionHandle && _selectedUnionPdfrxDocRect != null) {
       final updatedLocal = _computeLocalRectFromPdfrxDocRect(_selectedUnionPdfrxDocRect!);
-      if (updatedLocal != _textSelectionLocalRect) {
-        setState(() {
-          _textSelectionLocalRect = updatedLocal;
-        });
+      if (updatedLocal != _textSelectionLocalRectNotifier.value) {
+        _textSelectionLocalRectNotifier.value = updatedLocal;
       }
     }
   }
 
   void _resetSelectionOverlayState() {
     _selectionSyncSerial++;
+    _textSelectionLocalRectNotifier.value = null;
     if (!mounted) return;
     setState(() {
-      _textSelectionLocalRect = null;
       _selectedUnionPdfrxDocRect = null;
       _selectedPageDocRects = const {};
       _selectedText = null;
@@ -1051,6 +1074,9 @@ class PdfTabContentState extends State<PdfTabContent> {
       return;
     }
 
+    _textSelectionLocalRectNotifier.value = _isDraggingSelectionHandle
+        ? null
+        : _computeLocalRectFromPdfrxDocRect(unionPdfrxRect);
     setState(() {
       _selectedTextAnnotationId = null;
       _selectedShapeId = null;
@@ -1060,9 +1086,6 @@ class PdfTabContentState extends State<PdfTabContent> {
       _selectedPageDocRects = pageRectsMap;
       _selectedText = text;
       _hasActiveTextSelection = true;
-      _textSelectionLocalRect = _isDraggingSelectionHandle
-          ? null
-          : _computeLocalRectFromPdfrxDocRect(unionPdfrxRect!);
     });
   }
 
@@ -1078,10 +1101,8 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   void _onSelectionHandlePanStart(pdfrx.PdfTextSelectionAnchor anchor) {
     _isDraggingSelectionHandle = true;
-    if (_textSelectionLocalRect != null && mounted) {
-      setState(() {
-        _textSelectionLocalRect = null;
-      });
+    if (_textSelectionLocalRectNotifier.value != null && mounted) {
+      _textSelectionLocalRectNotifier.value = null;
     }
   }
 
@@ -1122,18 +1143,30 @@ class PdfTabContentState extends State<PdfTabContent> {
       _initialPageNumber = targetPage;
       ReadingProgressService.instance.saveLastPage(widget.file.path, targetPage);
     }
-    if (targetPage > 1 && controller.pageNumber != targetPage) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_pdfViewerController.isReady) return;
-        if (_pdfViewerController.pageNumber != targetPage) {
-          _pdfViewerController.goToPage(
+    final savedZoom = ReadingProgressService.instance.getLastZoom(widget.file.path);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || !_pdfViewerController.isReady) return;
+
+      if (targetPage >= 1 && targetPage <= totalPages) {
+        final pageLayout = _pdfViewerController.layout.pageLayouts[targetPage - 1];
+        final targetOffset = Offset(pageLayout.left, pageLayout.top);
+        if (savedZoom != null && savedZoom > 0.2) {
+          await _pdfViewerController.goToPosition(
+            documentOffset: targetOffset,
+            zoom: savedZoom,
+            duration: Duration.zero,
+          );
+        } else if (targetPage > 1) {
+          await _pdfViewerController.goToPage(
             pageNumber: targetPage,
             anchor: pdfrx.PdfPageAnchor.top,
             duration: Duration.zero,
           );
         }
-      });
-    }
+      } else if (savedZoom != null && savedZoom > 0.2) {
+        await _pdfViewerController.setZoom(Offset.zero, savedZoom, duration: Duration.zero);
+      }
+    });
     widget.onPageInfoChanged?.call(_currentPage, _pagesCount);
   }
 
@@ -1170,12 +1203,56 @@ class PdfTabContentState extends State<PdfTabContent> {
     widget.onPageInfoChanged?.call(_currentPage, _pagesCount);
   }
 
+  Future<void> _handlePdfLinkTap(pdfrx.PdfLink link) async {
+    if (_oneShotShape != null || _isEraserActive) {
+      return;
+    }
+    if (!_stylusOnlyMode &&
+        (_activeTool == EditorTool.pen ||
+            _activeTool == EditorTool.eraser ||
+            _activeTool == EditorTool.shape ||
+            _activeTool == EditorTool.textBox ||
+            _activeTool == EditorTool.latexBox)) {
+      return;
+    }
+
+    if (link.url != null) {
+      final urlString = link.url.toString();
+      try {
+        final success = await _stylusChannel.invokeMethod<bool>('openUrl', {'url': urlString});
+        if (success != true) {
+          await Clipboard.setData(ClipboardData(text: urlString));
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link copied to clipboard')),
+          );
+        }
+      } catch (_) {
+        await Clipboard.setData(ClipboardData(text: urlString));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link copied to clipboard')),
+        );
+      }
+      return;
+    }
+
+    if (link.dest != null && _pdfViewerController.isReady) {
+      final dest = link.dest!;
+      if (dest.pageNumber >= 1 && dest.pageNumber <= _pagesCount) {
+        jumpToPage(dest.pageNumber);
+      } else {
+        await _pdfViewerController.goToDest(dest);
+      }
+    }
+  }
+
   bool _onGeneralTap(
     BuildContext tapContext,
     pdfrx.PdfViewerController controller,
     pdfrx.PdfViewerGeneralTapHandlerDetails details,
   ) {
-    if (_oneShotShape != null || _isEraserActive || _isHardwareButtonPressed) {
+    if (_oneShotShape != null || _isEraserActive) {
       return true;
     }
 
@@ -1184,7 +1261,7 @@ class PdfTabContentState extends State<PdfTabContent> {
         Future.microtask(() {
           if (!mounted || !_pdfViewerController.isReady) return;
           if (!_pdfViewerController.textSelectionDelegate.hasSelectedText &&
-              (_hasActiveTextSelection || _textSelectionLocalRect != null)) {
+              (_hasActiveTextSelection || _textSelectionLocalRectNotifier.value != null)) {
             _resetSelectionOverlayState();
           }
         });
@@ -1272,18 +1349,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     if (!mounted) return;
     _onStylusDetected();
 
-    if (call.method == 'onStylusButtonState') {
-      final isPressed = call.arguments as bool? ?? false;
-      setState(() {
-        _isHardwareButtonPressed = isPressed;
-        if (isPressed) {
-          _activeTool = EditorTool.eraser;
-        }
-      });
-      if (isPressed) {
-        _drawingController.cancelActiveStroke();
-      }
-    } else if (call.method == 'onStylusButtonDown') {
+    if (call.method == 'onStylusButtonDown') {
       _lastButtonDownTime = DateTime.now();
       _toggleEraserMode();
     } else if (call.method == 'onStylusButtonUp') {
@@ -1380,107 +1446,107 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   void _onToolSelected(EditorTool tool) {
     final willEnableSelection = _oneShotShape == null &&
-        (_stylusOnlyMode ||
-            _isStylusDetected ||
-            tool == EditorTool.select ||
-            tool == EditorTool.highlight ||
-            tool == EditorTool.underline);
+        (_stylusOnlyMode || _isStylusDetected || tool == EditorTool.select);
     if (!willEnableSelection) {
       _clearPdfTextSelection();
     }
     setState(() {
       _activeTool = tool;
-      if (tool == EditorTool.eraser) {
-        _isHardwareButtonPressed = true;
-      } else {
-        _isHardwareButtonPressed = false;
-      }
+      _isHardwareButtonPressed = tool == EditorTool.eraser;
       _selectedTextAnnotationId = null;
-      if (!willEnableSelection) {
-        _textSelectionLocalRect = null;
-        _selectedText = null;
-      }
     });
   }
 
   void _onColorSelected(Color color) {
-    setState(() {
-      _activeColor = color;
-      if (_selectedShapeId != null) {
-        final shape = _drawingController.shapes.cast<DrawnShape?>().firstWhere(
-          (s) => s?.id == _selectedShapeId,
-          orElse: () => null,
-        );
-        if (shape != null) {
-          shape.color = color;
-          _drawingController.updateDrawnShape(shape);
-        }
+    bool controllerNotified = false;
+    _activeColor = color;
+    if (_selectedShapeId != null) {
+      final shape = _drawingController.shapes.cast<DrawnShape?>().firstWhere(
+        (s) => s?.id == _selectedShapeId,
+        orElse: () => null,
+      );
+      if (shape != null) {
+        shape.color = color;
+        _drawingController.updateDrawnShape(shape);
+        controllerNotified = true;
       }
-      if (_selectedStrokeId != null) {
-        final stroke = _drawingController.strokes.cast<DrawingStroke?>().firstWhere(
-          (s) => s?.id == _selectedStrokeId,
-          orElse: () => null,
-        );
-        if (stroke != null) {
-          stroke.color = color;
-          _drawingController.updateStroke(stroke);
-        }
+    }
+    if (_selectedStrokeId != null) {
+      final stroke = _drawingController.strokes.cast<DrawingStroke?>().firstWhere(
+        (s) => s?.id == _selectedStrokeId,
+        orElse: () => null,
+      );
+      if (stroke != null) {
+        stroke.color = color;
+        _drawingController.updateStroke(stroke);
+        controllerNotified = true;
       }
-      if (_editingTextBoxId != null) {
-        final tb = _drawingController.textBoxes.cast<DrawnTextBox?>().firstWhere(
-          (t) => t?.id == _editingTextBoxId,
-          orElse: () => null,
-        );
-        if (tb != null) {
-          tb.color = color;
-          _drawingController.updateTextBox(tb);
-        }
+    }
+    if (_editingTextBoxId != null) {
+      final tb = _drawingController.textBoxes.cast<DrawnTextBox?>().firstWhere(
+        (t) => t?.id == _editingTextBoxId,
+        orElse: () => null,
+      );
+      if (tb != null) {
+        tb.color = color;
+        _drawingController.updateTextBox(tb);
+        controllerNotified = true;
       }
-    });
+    }
+    if (!controllerNotified) {
+      setState(() {});
+    }
     _saveSettings();
   }
 
   void _onStrokeWidthSelected(double width) {
-    setState(() {
-      _activeStrokeWidth = width;
-      if (_selectedShapeId != null) {
-        final shape = _drawingController.shapes.cast<DrawnShape?>().firstWhere(
-          (s) => s?.id == _selectedShapeId,
-          orElse: () => null,
-        );
-        if (shape != null) {
-          shape.strokeWidth = width;
-          _drawingController.updateDrawnShape(shape);
-        }
+    bool controllerNotified = false;
+    _activeStrokeWidth = width;
+    if (_selectedShapeId != null) {
+      final shape = _drawingController.shapes.cast<DrawnShape?>().firstWhere(
+        (s) => s?.id == _selectedShapeId,
+        orElse: () => null,
+      );
+      if (shape != null) {
+        shape.strokeWidth = width;
+        _drawingController.updateDrawnShape(shape);
+        controllerNotified = true;
       }
-      if (_selectedStrokeId != null) {
-        final stroke = _drawingController.strokes.cast<DrawingStroke?>().firstWhere(
-          (s) => s?.id == _selectedStrokeId,
-          orElse: () => null,
-        );
-        if (stroke != null) {
-          stroke.strokeWidth = width;
-          _drawingController.updateStroke(stroke);
-        }
+    }
+    if (_selectedStrokeId != null) {
+      final stroke = _drawingController.strokes.cast<DrawingStroke?>().firstWhere(
+        (s) => s?.id == _selectedStrokeId,
+        orElse: () => null,
+      );
+      if (stroke != null) {
+        stroke.strokeWidth = width;
+        _drawingController.updateStroke(stroke);
+        controllerNotified = true;
       }
-    });
+    }
+    if (!controllerNotified) {
+      setState(() {});
+    }
     _saveSettings();
   }
 
   void _onFontSizeSelected(double fontSize) {
-    setState(() {
-      _activeFontSize = fontSize;
-      if (_editingTextBoxId != null) {
-        final tb = _drawingController.textBoxes.cast<DrawnTextBox?>().firstWhere(
-          (t) => t?.id == _editingTextBoxId,
-          orElse: () => null,
-        );
-        if (tb != null) {
-          tb.fontSize = fontSize;
-          _drawingController.updateTextBox(tb);
-        }
+    bool controllerNotified = false;
+    _activeFontSize = fontSize;
+    if (_editingTextBoxId != null) {
+      final tb = _drawingController.textBoxes.cast<DrawnTextBox?>().firstWhere(
+        (t) => t?.id == _editingTextBoxId,
+        orElse: () => null,
+      );
+      if (tb != null) {
+        tb.fontSize = fontSize;
+        _drawingController.updateTextBox(tb);
+        controllerNotified = true;
       }
-    });
+    }
+    if (!controllerNotified) {
+      setState(() {});
+    }
   }
 
   void _onShapeSelected(ShapeType shape) {
@@ -1527,13 +1593,33 @@ class PdfTabContentState extends State<PdfTabContent> {
     _drawingController.addTextBox(newBox);
     setState(() {
       _editingTextBoxId = newId;
+      _activeTool = EditorTool.select;
+    });
+  }
+
+  void _addInlineLatexBox(Offset position) {
+    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newBox = DrawnTextBox(
+      id: newId,
+      text: r'\frac{a}{b}',
+      position: position,
+      color: _activeColor,
+      fontSize: math.max(18.0, _activeFontSize),
+      pageNumber: _currentPage,
+      width: 180.0,
+      isLatex: true,
+    );
+    _drawingController.addTextBox(newBox);
+    setState(() {
+      _editingTextBoxId = newId;
+      _activeTool = EditorTool.select;
     });
   }
 
   BuildContext? _contextMenuDialogContext;
 
   void _showNonTextContextMenu(Offset screenPos, Offset docPos) {
-    if (_hasActiveTextSelection || _isEraserActive || _isHardwareButtonPressed) return;
+    if (_hasActiveTextSelection || _isEraserActive) return;
     HapticFeedback.lightImpact();
 
     showGeneralDialog(
@@ -1547,7 +1633,7 @@ class PdfTabContentState extends State<PdfTabContent> {
         final theme = Theme.of(context);
         final screenSize = MediaQuery.of(context).size;
         const menuWidth = 230.0;
-        const menuHeight = 195.0;
+        const menuHeight = 245.0;
         final left = screenPos.dx.clamp(16.0, screenSize.width - menuWidth - 16.0);
         final top = screenPos.dy.clamp(60.0, screenSize.height - menuHeight - 16.0);
 
@@ -1608,10 +1694,31 @@ class PdfTabContentState extends State<PdfTabContent> {
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                           child: Row(
                             children: [
-                              Icon(Icons.text_fields_rounded, size: 18, color: theme.colorScheme.primary),
+                              Icon(Icons.title_rounded, size: 18, color: theme.colorScheme.primary),
                               const SizedBox(width: 8),
                               const Text(
                                 'Add TextBox',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 14),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          Navigator.pop(dialogContext);
+                          _addInlineLatexBox(docPos);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                          child: Row(
+                            children: [
+                              Icon(Icons.functions_rounded, size: 18, color: theme.colorScheme.primary),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Add LaTeX Formula',
                                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                               ),
                             ],
@@ -1752,6 +1859,8 @@ class PdfTabContentState extends State<PdfTabContent> {
         file: widget.file,
         totalPages: _pagesCount,
         currentPage: _currentPage,
+        initialDeletedZeroIndexedPages: _deletedZeroIndexedPages,
+        initialAddedPagesCount: _addedPagesCount,
       ),
     );
 
@@ -1833,7 +1942,7 @@ class PdfTabContentState extends State<PdfTabContent> {
           immediate: true,
         );
 
-        _originalBaseBytes = Uint8List.fromList(finalBytes);
+        _originalBaseBytes = finalBytes;
         _deletedZeroIndexedPages.clear();
         _addedPagesCount = 0;
         _drawingController.clearAll();
@@ -1935,15 +2044,12 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   Future<bool> promptSaveIfDirty() => _promptSaveIfDirty();
 
-  Future<bool> saveToOriginalFile({bool showFeedback = true}) =>
-      _saveToOriginalFile(showFeedback: showFeedback);
-
   bool handleBackPress() {
     if (_selectedTextAnnotationId != null) {
       setState(() => _selectedTextAnnotationId = null);
       return true;
     }
-    if (_textSelectionLocalRect != null) {
+    if (_textSelectionLocalRectNotifier.value != null) {
       _clearPdfTextSelection();
       return true;
     }
@@ -2106,7 +2212,7 @@ class PdfTabContentState extends State<PdfTabContent> {
                                 smartMaxScale: double.infinity,
                                 minScale: 0.2,
                                 maxScale: 8.0,
-                                maxPagesVisible: 2.5,
+                                maxPagesVisible: double.infinity,
                                 onePassRenderingScaleThreshold: 220 / 72,
                               ),
                               maxImageBytesCachedOnMemory: 96 * 1024 * 1024,
@@ -2128,6 +2234,11 @@ class PdfTabContentState extends State<PdfTabContent> {
                               onViewSizeChanged: _onViewSizeChanged,
                               onPageChanged: _onPdfPageChanged,
                               onGeneralTap: _onGeneralTap,
+                              linkHandlerParams: pdfrx.PdfLinkHandlerParams(
+                                onLinkTap: _handlePdfLinkTap,
+                                linkColor: Colors.transparent,
+                                enableAutoLinkDetection: true,
+                              ),
                             ),
                           ),
                         ),
@@ -2159,7 +2270,6 @@ class PdfTabContentState extends State<PdfTabContent> {
                             },
                             onCancelOneShotShape: () => setState(() => _oneShotShape = null),
                             hasActiveTextSelection: _hasActiveTextSelection,
-                            onNonTextLongPressed: null,
                             editingTextBoxId: _editingTextBoxId,
                             onEditingTextBoxChanged: (id) {
                               if (mounted) {
@@ -2169,6 +2279,9 @@ class PdfTabContentState extends State<PdfTabContent> {
                                     _selectedTextAnnotationId = null;
                                     _selectedShapeId = null;
                                     _selectedStrokeId = null;
+                                  } else if (_activeTool == EditorTool.textBox ||
+                                      _activeTool == EditorTool.latexBox) {
+                                    _activeTool = EditorTool.select;
                                   }
                                 });
                               }
@@ -2223,6 +2336,18 @@ class PdfTabContentState extends State<PdfTabContent> {
                               }
                             },
                             onAddTextBoxRequested: _addInlineTextBox,
+                            onAddLatexBoxRequested: _addInlineLatexBox,
+                            onShapeCompleted: () {
+                              setState(() {
+                                _activeTool = EditorTool.select;
+                                if (_drawingController.shapes.isNotEmpty) {
+                                  _selectedShapeId = _drawingController.shapes.last.id;
+                                  _selectedStrokeId = null;
+                                  _selectedTextAnnotationId = null;
+                                }
+                              });
+                              _notifyDirtyIfChanged();
+                            },
                             onStylusDetected: _onStylusDetected,
                             onStylusDrawStarted: _onStylusDrawStarted,
                           ),
@@ -2231,8 +2356,14 @@ class PdfTabContentState extends State<PdfTabContent> {
                     );
                   },
                 ),
-                if (_textSelectionLocalRect != null && _selectedText != null)
-                  _buildTextSelectionMenu(),
+                if (_selectedText != null)
+                  ValueListenableBuilder<Rect?>(
+                    valueListenable: _textSelectionLocalRectNotifier,
+                    builder: (context, localRect, _) {
+                      if (localRect == null) return const SizedBox.shrink();
+                      return _buildTextSelectionMenu(localRect);
+                    },
+                  ),
                 PdfFloatingToolbar(
                   activeTool: _activeTool,
                   activeShape: _activeShape,
@@ -2277,96 +2408,86 @@ class PdfTabContentState extends State<PdfTabContent> {
                   activeTextBox: editingTextBox,
                   onTextAnnotationColorChanged: (color) {
                     if (selectedTextAnnotation == null) return;
-                    setState(() {
-                      selectedTextAnnotation.color = color;
-                      _drawingController.updateTextAnnotation(selectedTextAnnotation);
-                      if (selectedTextAnnotation.type == TextAnnotationType.highlight) {
-                        _highlightColor = color;
-                      } else if (selectedTextAnnotation.type == TextAnnotationType.underline) {
-                        _underlineColor = color;
-                      }
-                    });
+                    selectedTextAnnotation.color = color;
+                    if (selectedTextAnnotation.type == TextAnnotationType.highlight) {
+                      _highlightColor = color;
+                    } else if (selectedTextAnnotation.type == TextAnnotationType.underline) {
+                      _underlineColor = color;
+                    }
+                    _drawingController.updateTextAnnotation(selectedTextAnnotation);
                     _saveSettings();
-                    _notifyDirtyIfChanged();
                   },
                   onDeleteTextAnnotation: () {
                     if (selectedTextAnnotation == null) return;
-                    setState(() {
-                      _drawingController.deleteTextAnnotation(selectedTextAnnotation.id);
-                      _selectedTextAnnotationId = null;
-                    });
-                    _notifyDirtyIfChanged();
+                    _selectedTextAnnotationId = null;
+                    _drawingController.deleteTextAnnotation(selectedTextAnnotation.id);
                   },
                   onDoneTextAnnotation: () {
                     setState(() => _selectedTextAnnotationId = null);
                   },
                   onShapeStrokeWidthChanged: (newWidth) {
                     if (selectedShape == null) return;
-                    setState(() {
-                      selectedShape.strokeWidth = newWidth;
-                    });
+                    selectedShape.strokeWidth = newWidth;
                     _drawingController.updateDrawnShape(selectedShape);
                   },
                   onShapeColorChanged: (color) {
                     if (selectedShape == null) return;
-                    setState(() {
-                      selectedShape.color = color;
-                    });
+                    selectedShape.color = color;
                     _drawingController.updateDrawnShape(selectedShape);
                   },
                   onDeleteShape: () {
                     if (selectedShape == null) return;
+                    _selectedShapeId = null;
                     _drawingController.deleteDrawnShape(selectedShape.id);
-                    setState(() => _selectedShapeId = null);
                   },
                   onDoneShape: () {
                     setState(() => _selectedShapeId = null);
                   },
                   onStrokeWidthChanged: (newWidth) {
                     if (selectedStroke == null) return;
-                    setState(() {
-                      selectedStroke.strokeWidth = newWidth;
-                    });
+                    selectedStroke.strokeWidth = newWidth;
                     _drawingController.updateStroke(selectedStroke);
                   },
                   onStrokeColorChanged: (color) {
                     if (selectedStroke == null) return;
-                    setState(() {
-                      selectedStroke.color = color;
-                    });
+                    selectedStroke.color = color;
                     _drawingController.updateStroke(selectedStroke);
                   },
                   onDeleteStroke: () {
                     if (selectedStroke == null) return;
+                    _selectedStrokeId = null;
                     _drawingController.deleteStroke(selectedStroke.id);
-                    setState(() => _selectedStrokeId = null);
                   },
                   onDoneStroke: () {
                     setState(() => _selectedStrokeId = null);
                   },
                   onTextBoxFontSizeChanged: (newSize) {
                     if (editingTextBox == null) return;
-                    setState(() {
-                      editingTextBox.fontSize = newSize;
-                      _activeFontSize = newSize;
-                    });
+                    editingTextBox.fontSize = newSize;
+                    _activeFontSize = newSize;
                     _drawingController.updateTextBox(editingTextBox);
                     _saveSettings();
                   },
                   onTextBoxColorChanged: (color) {
                     if (editingTextBox == null) return;
-                    setState(() {
-                      editingTextBox.color = color;
-                    });
+                    editingTextBox.color = color;
                     _drawingController.updateTextBox(editingTextBox);
                   },
                   onDeleteTextBox: () {
                     if (editingTextBox == null) return;
+                    _editingTextBoxId = null;
+                    if (_activeTool == EditorTool.textBox || _activeTool == EditorTool.latexBox) {
+                      _activeTool = EditorTool.select;
+                    }
                     _drawingController.deleteTextBox(editingTextBox.id);
-                    setState(() => _editingTextBoxId = null);
                   },
                   onDoneTextBox: () {
-                    setState(() => _editingTextBoxId = null);
+                    setState(() {
+                      _editingTextBoxId = null;
+                      if (_activeTool == EditorTool.textBox || _activeTool == EditorTool.latexBox) {
+                        _activeTool = EditorTool.select;
+                      }
+                    });
                   },
                 ),
               ],
@@ -2374,16 +2495,14 @@ class PdfTabContentState extends State<PdfTabContent> {
           );
   }
 
-  Widget _buildTextSelectionMenu() {
-    if (_textSelectionLocalRect == null) return const SizedBox.shrink();
-
+  Widget _buildTextSelectionMenu(Rect localRect) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     const menuHeight = 44.0;
     const idealMenuWidth = 360.0;
     final maxAllowedWidth = math.max(120.0, math.min(idealMenuWidth, screenWidth - 24.0));
 
-    final selCenter = _textSelectionLocalRect!.center.dx;
+    final selCenter = localRect.center.dx;
     double left = selCenter - (maxAllowedWidth / 2);
     if (left + maxAllowedWidth > screenWidth - 12.0) {
       left = screenWidth - maxAllowedWidth - 12.0;
@@ -2392,9 +2511,9 @@ class PdfTabContentState extends State<PdfTabContent> {
       left = 12.0;
     }
 
-    double top = _textSelectionLocalRect!.top - menuHeight - 10.0;
+    double top = localRect.top - menuHeight - 10.0;
     if (top < 56.0) {
-      top = _textSelectionLocalRect!.bottom + 10.0;
+      top = localRect.bottom + 10.0;
     }
     if (top > screenHeight - menuHeight - 16.0) {
       top = screenHeight - menuHeight - 16.0;

@@ -84,6 +84,7 @@ class PdfThumbnailService {
   static const int _maxMemoryCacheEntries = 120;
 
   final LinkedHashMap<String, Uint8List> _memoryCache = LinkedHashMap<String, Uint8List>();
+  final Map<String, Future<Uint8List?>> _inFlight = {};
   final Map<String, Set<String>> _diskCachePathsBySource = {};
   final Map<String, _PdfDocSession> _sessions = {};
   Directory? _cacheDir;
@@ -132,62 +133,17 @@ class PdfThumbnailService {
     );
   }
 
-  String _getCacheKey(String keyInput, int lastModifiedMillis) {
-    final input = '$keyInput-$lastModifiedMillis';
-    return md5.convert(utf8.encode(input)).toString();
+  String _getPathHash(String filePath) {
+    return md5.convert(utf8.encode(filePath)).toString();
   }
 
-  Future<Uint8List?> getThumbnail(String filePath, {int lastModifiedMillis = 0}) async {
-    final memKey = '$filePath|$lastModifiedMillis';
-    final cachedMem = _getFromMemory(memKey);
-    if (cachedMem != null) {
-      return cachedMem;
-    }
-
-    try {
-      await init();
-      final cacheKey = _getCacheKey(filePath, lastModifiedMillis);
-      final cacheFile = File(p.join(_cacheDir!.path, '$cacheKey.jpg'));
-      _trackDiskCacheFile(filePath, cacheFile.path);
-
-      if (await cacheFile.exists()) {
-        final bytes = await cacheFile.readAsBytes();
-        _putInMemory(memKey, bytes);
-        return bytes;
-      }
-
-      final session = _getSession(filePath);
-      return await session.runSerialized<Uint8List>((document) async {
-        if (document.pagesCount < 1) return null;
-        final page = await document.getPage(1);
-        try {
-          const targetWidth = 300.0;
-          final scale = targetWidth / page.width;
-          final targetHeight = page.height * scale;
-
-          final pageImage = await page.render(
-            width: targetWidth,
-            height: targetHeight,
-            format: PdfPageImageFormat.jpeg,
-            quality: 85,
-          );
-
-          if (pageImage != null) {
-            final bytes = pageImage.bytes;
-            _putInMemory(memKey, bytes);
-            cacheFile.writeAsBytes(bytes).ignore();
-            return bytes;
-          }
-        } finally {
-          await page.close();
-        }
-        return null;
-      });
-    } catch (_) {
-      // PDF might be encrypted or corrupted
-    }
-
-    return null;
+  Future<Uint8List?> getThumbnail(String filePath, {int lastModifiedMillis = 0}) {
+    return getPageThumbnail(
+      filePath,
+      1,
+      lastModifiedMillis: lastModifiedMillis,
+      targetWidth: 300.0,
+    );
   }
 
   Future<Uint8List?> getPageThumbnail(
@@ -202,10 +158,39 @@ class PdfThumbnailService {
       return cachedMem;
     }
 
+    final existingFlight = _inFlight[memKey];
+    if (existingFlight != null) {
+      return existingFlight;
+    }
+
+    final future = _loadOrRenderPage(
+      filePath: filePath,
+      pageNumber: pageNumber,
+      lastModifiedMillis: lastModifiedMillis,
+      targetWidth: targetWidth,
+      memKey: memKey,
+    );
+    _inFlight[memKey] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlight.remove(memKey);
+    }
+  }
+
+  Future<Uint8List?> _loadOrRenderPage({
+    required String filePath,
+    required int pageNumber,
+    required int lastModifiedMillis,
+    required double targetWidth,
+    required String memKey,
+  }) async {
     try {
       await init();
-      final cacheKey = _getCacheKey('$filePath-page-$pageNumber', lastModifiedMillis);
-      final cacheFile = File(p.join(_cacheDir!.path, '$cacheKey.jpg'));
+      final pathHash = _getPathHash(filePath);
+      final cacheFile = File(
+        p.join(_cacheDir!.path, '${pathHash}_${lastModifiedMillis}_p$pageNumber.jpg'),
+      );
       _trackDiskCacheFile(filePath, cacheFile.path);
 
       if (await cacheFile.exists()) {
@@ -219,14 +204,15 @@ class PdfThumbnailService {
         if (pageNumber < 1 || pageNumber > document.pagesCount) return null;
         final page = await document.getPage(pageNumber);
         try {
-          final scale = targetWidth / page.width;
+          final effectiveWidth = pageNumber == 1 && targetWidth < 300.0 ? 300.0 : targetWidth;
+          final scale = effectiveWidth / page.width;
           final targetHeight = page.height * scale;
 
           final pageImage = await page.render(
-            width: targetWidth,
+            width: effectiveWidth,
             height: targetHeight,
             format: PdfPageImageFormat.jpeg,
-            quality: 80,
+            quality: pageNumber == 1 ? 85 : 80,
           );
 
           if (pageImage != null) {
@@ -245,13 +231,10 @@ class PdfThumbnailService {
     }
   }
 
-  void clearMemoryCache() {
-    _memoryCache.clear();
-  }
-
   /// Clears both in-memory LRU cache, active native document sessions, and disk cache files.
   Future<void> clearAllCache() async {
     _memoryCache.clear();
+    _inFlight.clear();
     _diskCachePathsBySource.clear();
 
     final activeSessions = _sessions.values.toList();
@@ -276,6 +259,7 @@ class PdfThumbnailService {
 
   void invalidate(String filePath) {
     _memoryCache.removeWhere((key, _) => key.startsWith('$filePath|'));
+    _inFlight.removeWhere((key, _) => key.startsWith('$filePath|'));
 
     final session = _sessions.remove(filePath);
     session?.close();
@@ -283,13 +267,18 @@ class PdfThumbnailService {
     final diskPaths = _diskCachePathsBySource.remove(filePath);
     if (diskPaths != null) {
       for (final pth in diskPaths) {
-        try {
-          final f = File(pth);
-          if (f.existsSync()) {
-            f.deleteSync();
-          }
-        } catch (_) {}
+        File(pth).delete().ignore();
       }
+    }
+
+    final prefix = '${_getPathHash(filePath)}_';
+    final dir = _cacheDir;
+    if (dir != null) {
+      dir.list(followLinks: false).listen((entity) {
+        if (entity is File && p.basename(entity.path).startsWith(prefix)) {
+          entity.delete().ignore();
+        }
+      }, onError: (_) {});
     }
   }
 }

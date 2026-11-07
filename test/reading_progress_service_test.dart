@@ -24,8 +24,10 @@ void main() {
 
       serviceA.saveLastPage('/storage/books/a.pdf', 14);
       serviceA.saveLastPage('/storage/books/b.pdf', 5);
+      serviceA.saveLastZoom('/storage/books/a.pdf', 1.75);
       expect(serviceA.getLastPage('/storage/books/a.pdf'), 14);
       expect(serviceA.getLastPage('/storage/books/b.pdf'), 5);
+      expect(serviceA.getLastZoom('/storage/books/a.pdf'), 1.75);
 
       await serviceA.flush();
 
@@ -33,6 +35,7 @@ void main() {
       await serviceB.init(storageDirOverride: tempDir);
       expect(serviceB.getLastPage('/storage/books/a.pdf'), 14);
       expect(serviceB.getLastPage('/storage/books/b.pdf'), 5);
+      expect(serviceB.getLastZoom('/storage/books/a.pdf'), 1.75);
     });
 
     test('resets to page 1 and cleans up on rename and delete', () async {

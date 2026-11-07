@@ -153,129 +153,6 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- VIEWPORT / ORIENTATION COORDINATE RESCALING ---
-
-  static int _findPageIdxForY(double y, List<Rect> boundsList, [double pageSpacing = 4.0]) {
-    for (int i = 0; i < boundsList.length; i++) {
-      if (y <= boundsList[i].bottom + pageSpacing / 2) {
-        return i;
-      }
-    }
-    return boundsList.length - 1;
-  }
-
-  static Offset _rescalePoint(Offset pt, List<Rect> oldBounds, List<Rect> newBounds) {
-    final idx = _findPageIdxForY(pt.dy, oldBounds);
-    final ob = oldBounds[idx];
-    final nb = newBounds[idx];
-    if (ob.width <= 0 || ob.height <= 0) return pt;
-    final normX = (pt.dx - ob.left) / ob.width;
-    final normY = (pt.dy - ob.top) / ob.height;
-    return Offset(nb.left + normX * nb.width, nb.top + normY * nb.height);
-  }
-
-  /// Rescales all document-space annotation coordinates when viewport width changes
-  /// (e.g., portrait <-> landscape rotation or split-screen resize).
-  void rescaleAnnotations(
-    List<Rect> oldPageBounds,
-    List<Rect> newPageBounds, {
-    bool notify = true,
-  }) {
-    if (oldPageBounds.isEmpty ||
-        oldPageBounds.length != newPageBounds.length ||
-        !hasAnnotations) {
-      return;
-    }
-    final oldW = oldPageBounds.first.width;
-    final newW = newPageBounds.first.width;
-    if (oldW <= 0 || newW <= 0 || (oldW - newW).abs() < 0.5) {
-      return;
-    }
-    final widthRatio = newW / oldW;
-
-    for (final stroke in _strokes) {
-      for (int i = 0; i < stroke.points.length; i++) {
-        final sp = stroke.points[i];
-        stroke.points[i] = StrokePoint(
-          offset: _rescalePoint(sp.offset, oldPageBounds, newPageBounds),
-          pressure: sp.pressure,
-        );
-      }
-      stroke.strokeWidth = math.max(0.5, stroke.strokeWidth * widthRatio);
-      stroke.invalidateBounds();
-    }
-
-    for (final shape in _shapes) {
-      shape.start = _rescalePoint(shape.start, oldPageBounds, newPageBounds);
-      shape.end = _rescalePoint(shape.end, oldPageBounds, newPageBounds);
-      shape.strokeWidth = math.max(0.5, shape.strokeWidth * widthRatio);
-    }
-
-    for (final tb in _textBoxes) {
-      tb.position = _rescalePoint(tb.position, oldPageBounds, newPageBounds);
-      tb.fontSize = math.max(6.0, tb.fontSize * widthRatio);
-      if (tb.width != null) {
-        tb.width = math.max(60.0, tb.width! * widthRatio);
-      }
-    }
-
-    for (final img in _images) {
-      img.position = _rescalePoint(img.position, oldPageBounds, newPageBounds);
-      img.width = math.max(24.0, img.width * widthRatio);
-      img.height = math.max(24.0, img.height * widthRatio);
-    }
-
-    for (final ta in _textAnnotations) {
-      final pIdx = (ta.pageNumber - 1).clamp(0, oldPageBounds.length - 1);
-      final ob = oldPageBounds[pIdx];
-      final nb = newPageBounds[pIdx];
-      if (ob.width <= 0 || ob.height <= 0) continue;
-      for (int i = 0; i < ta.rects.length; i++) {
-        final r = ta.rects[i];
-        final left = nb.left + ((r.left - ob.left) / ob.width) * nb.width;
-        final top = nb.top + ((r.top - ob.top) / ob.height) * nb.height;
-        final width = (r.width / ob.width) * nb.width;
-        final height = (r.height / ob.height) * nb.height;
-        ta.rects[i] = Rect.fromLTWH(left, top, width, height);
-      }
-      ta.invalidateBounds();
-    }
-
-    // Keep undo history snapshots aligned with the new viewport coordinates
-    for (final action in _undoHistory) {
-      if (action.type == _UndoActionType.modifyShape) {
-        final c = action.data as _ShapeChange;
-        c.oldStart = _rescalePoint(c.oldStart, oldPageBounds, newPageBounds);
-        c.oldEnd = _rescalePoint(c.oldEnd, oldPageBounds, newPageBounds);
-        c.newStart = _rescalePoint(c.newStart, oldPageBounds, newPageBounds);
-        c.newEnd = _rescalePoint(c.newEnd, oldPageBounds, newPageBounds);
-      } else if (action.type == _UndoActionType.modifyImage) {
-        final c = action.data as _ImageChange;
-        c.oldPosition = _rescalePoint(c.oldPosition, oldPageBounds, newPageBounds);
-        c.oldWidth = math.max(24.0, c.oldWidth * widthRatio);
-        c.oldHeight = math.max(24.0, c.oldHeight * widthRatio);
-        c.newPosition = _rescalePoint(c.newPosition, oldPageBounds, newPageBounds);
-        c.newWidth = math.max(24.0, c.newWidth * widthRatio);
-        c.newHeight = math.max(24.0, c.newHeight * widthRatio);
-      } else if (action.type == _UndoActionType.modifyTextBoxLayout) {
-        final c = action.data as _TextBoxLayoutChange;
-        c.oldPosition = _rescalePoint(c.oldPosition, oldPageBounds, newPageBounds);
-        if (c.oldWidth != null) c.oldWidth = math.max(60.0, c.oldWidth! * widthRatio);
-        c.newPosition = _rescalePoint(c.newPosition, oldPageBounds, newPageBounds);
-        if (c.newWidth != null) c.newWidth = math.max(60.0, c.newWidth! * widthRatio);
-      }
-    }
-
-    if (notify) {
-      _notifyBothLayers();
-    }
-  }
-
-  void refreshLayers() {
-    _savedLayerNotifier.notify();
-    _activeLayerNotifier.notify();
-  }
-
   // --- STROKE DRAWING ---
 
   void startStroke(Offset point, double pressure) {
@@ -340,7 +217,7 @@ class DrawingController extends ChangeNotifier {
       final shape = _shapes[i];
       if (pageNumber != null && shape.pageNumber != pageNumber) continue;
 
-      if (_hitTestShape(shape, point, radius + shape.strokeWidth / 2)) {
+      if (isPointNearShape(point, shape, radius + shape.strokeWidth / 2)) {
         _undoHistory.add(_UndoAction(_UndoActionType.removeShape, shape));
         _shapes.removeAt(i);
         erasedShapes = true;
@@ -358,6 +235,9 @@ class DrawingController extends ChangeNotifier {
   }
 
   bool _hitTestStroke(DrawingStroke stroke, Offset point, double threshold) {
+    if (!stroke.getBounds().inflate(threshold).contains(point)) {
+      return false;
+    }
     for (int i = 0; i < stroke.points.length; i++) {
       if ((stroke.points[i].offset - point).distance <= threshold) {
         return true;
@@ -370,30 +250,36 @@ class DrawingController extends ChangeNotifier {
     return false;
   }
 
-  bool _hitTestShape(DrawnShape shape, Offset point, double threshold) {
-    return isPointNearShape(point, shape, threshold);
-  }
-
   static bool isPointNearShape(Offset point, DrawnShape shape, [double threshold = 24.0]) {
     final rect = Rect.fromPoints(shape.start, shape.end);
+    if (!rect.inflate(threshold).contains(point)) {
+      return false;
+    }
     switch (shape.type) {
       case ShapeType.rectangle:
         // Inside small rectangle or near perimeter of larger rectangle
-        if (rect.inflate(threshold).contains(point)) {
-          if (rect.width < 100 && rect.height < 100) return true;
-          final l1 = _distToSegment(point, rect.topLeft, rect.topRight);
-          final l2 = _distToSegment(point, rect.topRight, rect.bottomRight);
-          final l3 = _distToSegment(point, rect.bottomRight, rect.bottomLeft);
-          final l4 = _distToSegment(point, rect.bottomLeft, rect.topLeft);
-          return math.min(math.min(l1, l2), math.min(l3, l4)) <= threshold;
-        }
-        return false;
+        if (rect.width < 100 && rect.height < 100) return true;
+        final l1 = _distToSegment(point, rect.topLeft, rect.topRight);
+        final l2 = _distToSegment(point, rect.topRight, rect.bottomRight);
+        final l3 = _distToSegment(point, rect.bottomRight, rect.bottomLeft);
+        final l4 = _distToSegment(point, rect.bottomLeft, rect.topLeft);
+        return math.min(math.min(l1, l2), math.min(l3, l4)) <= threshold;
       case ShapeType.circle:
         final center = rect.center;
-        final r = math.max(rect.width, rect.height) / 2;
-        final d = (point - center).distance;
-        if (r < 50 && d <= r + threshold) return true;
-        return (d - r).abs() <= threshold;
+        final rx = rect.width / 2;
+        final ry = rect.height / 2;
+        final dx = (point.dx - center.dx).abs();
+        final dy = (point.dy - center.dy).abs();
+        final outerRx = math.max(rx + threshold, 1.0);
+        final outerRy = math.max(ry + threshold, 1.0);
+        final outerNorm = (dx * dx) / (outerRx * outerRx) + (dy * dy) / (outerRy * outerRy);
+        if (outerNorm > 1.0) return false;
+        if (rx < 50 && ry < 50) return true;
+        if (rx <= threshold || ry <= threshold) return true;
+        final innerRx = rx - threshold;
+        final innerRy = ry - threshold;
+        final innerNorm = (dx * dx) / (innerRx * innerRx) + (dy * dy) / (innerRy * innerRy);
+        return innerNorm >= 1.0;
       case ShapeType.line:
       case ShapeType.arrow:
         return _distToSegment(point, shape.start, shape.end) <= threshold;
@@ -421,6 +307,7 @@ class DrawingController extends ChangeNotifier {
   }
 
   void updateStroke(DrawingStroke stroke) {
+    stroke.invalidateBounds();
     _isDirty = true;
     _notifySavedOnly();
   }

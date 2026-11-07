@@ -1,5 +1,8 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import '../services/editor_settings_service.dart';
@@ -124,35 +127,7 @@ class _SingleShapePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    switch (type) {
-      case ShapeType.rectangle:
-        canvas.drawRect(shapeRect, paint);
-        break;
-      case ShapeType.circle:
-        canvas.drawOval(shapeRect, paint);
-        break;
-      case ShapeType.line:
-        canvas.drawLine(localStart, localEnd, paint);
-        break;
-      case ShapeType.arrow:
-        canvas.drawLine(localStart, localEnd, paint);
-        final angle = math.atan2(localEnd.dy - localStart.dy, localEnd.dx - localStart.dx);
-        final arrowLength = math.max(strokeWidth * 4.0, 12.0);
-        const arrowAngle = math.pi / 6;
-
-        final p1 = Offset(
-          localEnd.dx - arrowLength * math.cos(angle - arrowAngle),
-          localEnd.dy - arrowLength * math.sin(angle - arrowAngle),
-        );
-        final p2 = Offset(
-          localEnd.dx - arrowLength * math.cos(angle + arrowAngle),
-          localEnd.dy - arrowLength * math.sin(angle + arrowAngle),
-        );
-
-        canvas.drawLine(localEnd, p1, paint);
-        canvas.drawLine(localEnd, p2, paint);
-        break;
-    }
+    paintShapeOnCanvas(canvas, type, localStart, localEnd, paint);
   }
 
   @override
@@ -212,8 +187,22 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
     _dragStartOriginalEnd = null;
   }
 
+  double get _currentScale =>
+      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+
   @override
   Widget build(BuildContext context) {
+    final tc = widget.transformationController;
+    if (widget.isSelected && tc != null) {
+      return ValueListenableBuilder<Matrix4>(
+        valueListenable: tc,
+        builder: (context, _, _) => _buildShapeBody(),
+      );
+    }
+    return _buildShapeBody();
+  }
+
+  Widget _buildShapeBody() {
     final shape = widget.shape;
     final minX = math.min(shape.start.dx, shape.end.dx);
     final maxX = math.max(shape.start.dx, shape.end.dx);
@@ -225,7 +214,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
     final boxWidth = width + kPadding * 2;
     final boxHeight = height + kPadding * 2;
 
-    final scale = (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+    final scale = _currentScale;
     final handleTouchSize = 40.0 / scale;
     final handleVisualSize = 14.0 / scale;
     final handleBorderWidth = 2.0 / scale;
@@ -267,7 +256,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 behavior: HitTestBehavior.translucent,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   widget.onUpdate(
                     widget.shape.start + deltaDoc,
                     widget.shape.end + deltaDoc,
@@ -301,7 +290,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
                   final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
                   widget.onUpdate(Offset(newLeft, newTop), Offset(maxX, maxY));
@@ -316,7 +305,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
                   final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
                   widget.onUpdate(Offset(minX, newTop), Offset(newRight, maxY));
@@ -331,7 +320,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
                   final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
                   widget.onUpdate(Offset(newLeft, minY), Offset(maxX, newBottom));
@@ -346,7 +335,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
                   final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
                   widget.onUpdate(Offset(minX, minY), Offset(newRight, newBottom));
@@ -362,7 +351,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   widget.onUpdate(widget.shape.start + deltaDoc, widget.shape.end);
                   setState(() {});
                 },
@@ -375,7 +364,7 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startDrag(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   widget.onUpdate(widget.shape.start, widget.shape.end + deltaDoc);
                   setState(() {});
                 },
@@ -460,9 +449,23 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
     _dragOrigHeight = null;
   }
 
+  double get _currentScale =>
+      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+
   @override
   Widget build(BuildContext context) {
-    final scale = (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+    final tc = widget.transformationController;
+    if (_isSelected && tc != null) {
+      return ValueListenableBuilder<Matrix4>(
+        valueListenable: tc,
+        builder: (context, _, _) => _buildImageBody(),
+      );
+    }
+    return _buildImageBody();
+  }
+
+  Widget _buildImageBody() {
+    final scale = _currentScale;
     final handleTouchSize = 40.0 / scale;
     final handleVisualSize = 14.0 / scale;
     final handleBorderWidth = 2.0 / scale;
@@ -472,7 +475,7 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
       onTap: () => setState(() => _isSelected = !_isSelected),
       onPanStart: (_) => _startModification(),
       onPanUpdate: (details) {
-        final deltaDoc = details.delta / scale;
+        final deltaDoc = details.delta / _currentScale;
         setState(() {
           _position += deltaDoc;
         });
@@ -526,7 +529,7 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
                 borderWidth: handleBorderWidth,
                 onPanStart: (_) => _startModification(),
                 onPanUpdate: (details) {
-                  final deltaDoc = details.delta / scale;
+                  final deltaDoc = details.delta / _currentScale;
                   setState(() {
                     _width = math.max(36.0, _width + deltaDoc.dx);
                     _height = math.max(24.0, _width / aspect);
@@ -588,6 +591,7 @@ class TextBoxCanvasItem extends StatefulWidget {
 }
 
 class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
+  final GlobalKey _repaintKey = GlobalKey();
   late Offset _position;
   late TextEditingController _textController;
   late FocusNode _focusNode;
@@ -597,29 +601,66 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
 
   Offset? _dragOrigPosition;
   double? _dragOrigWidth;
-
-  String get _fontFamilyName {
-    switch (widget.textBoxFont) {
-      case AppFontFamily.serif:
-        return 'serif';
-      case AppFontFamily.monospace:
-        return 'monospace';
-      case AppFontFamily.sansSerif:
-        return 'sans-serif';
-    }
-  }
+  String? _lastCapturedText;
+  double? _lastCapturedFontSize;
+  Color? _lastCapturedColor;
+  double? _lastCapturedWidth;
 
   double get _currentScale =>
       (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+
+  Future<void> _captureRenderedLatex() async {
+    if (!widget.textBox.isLatex || !mounted) return;
+    try {
+      final boundary = _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null || !boundary.hasSize) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      try {
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        final bytes = byteData?.buffer.asUint8List();
+        if (bytes != null && mounted) {
+          widget.textBox.renderedImageBytes = bytes;
+          widget.textBox.renderedSize = boundary.size;
+          _lastCapturedText = widget.textBox.text;
+          _lastCapturedFontSize = widget.textBox.fontSize;
+          _lastCapturedColor = widget.textBox.color;
+          _lastCapturedWidth = _width;
+        }
+      } finally {
+        image.dispose();
+      }
+    } catch (_) {}
+  }
 
   @override
   void initState() {
     super.initState();
     _position = widget.textBox.position;
     _fontSize = widget.textBox.fontSize;
-    _width = widget.textBox.width ?? 220.0;
+    _width = widget.textBox.width ?? (widget.textBox.isLatex ? 250.0 : 220.0);
     _textController = TextEditingController(text: widget.textBox.text);
     _focusNode = FocusNode();
+    if (widget.textBox.isLatex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
+    }
+  }
+
+  void _insertOperator(String op) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    final int start = selection.isValid ? selection.start : text.length;
+    final int end = selection.isValid ? selection.end : text.length;
+
+    final newText = text.replaceRange(start, end, op);
+    final newCursorPos = start + op.length;
+
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+
+    setState(() {});
+    widget.onUpdate(newText, _position, _fontSize, _width);
   }
 
   void _startLayoutDrag() {
@@ -646,6 +687,9 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
       widget.onUpdate(text, _position, _fontSize, _width);
       _focusNode.unfocus();
       widget.onFinishEditing();
+      if (widget.textBox.isLatex) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
+      }
     }
   }
 
@@ -657,7 +701,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
     if (widget.textBox.width != null) {
       _width = widget.textBox.width!;
     }
-    if (oldWidget.textBox.text != widget.textBox.text &&
+    if ((!widget.isEditing || oldWidget.textBox != widget.textBox) &&
         _textController.text != widget.textBox.text) {
       _textController.text = widget.textBox.text;
     }
@@ -668,6 +712,17 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
         widget.textBox.fontSize = _fontSize;
         widget.textBox.position = _position;
         widget.textBox.width = _width;
+      }
+    }
+    if (widget.textBox.isLatex && !widget.isEditing) {
+      final needsRecapture = (oldWidget.isEditing && !widget.isEditing) ||
+          widget.textBox.renderedImageBytes == null ||
+          _lastCapturedText != widget.textBox.text ||
+          _lastCapturedFontSize != widget.textBox.fontSize ||
+          _lastCapturedColor != widget.textBox.color ||
+          _lastCapturedWidth != _width;
+      if (needsRecapture) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
       }
     }
     if (!oldWidget.isEditing && widget.isEditing) {
@@ -686,8 +741,6 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
 
   @override
   Widget build(BuildContext context) {
-    final scale = _currentScale;
-
     if (widget.isEditing) {
       final textInput = Container(
         width: _width,
@@ -714,7 +767,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                   onPanStart: (_) => _startLayoutDrag(),
                   onPanUpdate: (details) {
                     setState(() {
-                      _position += details.delta / scale;
+                      _position += details.delta / _currentScale;
                     });
                     widget.onUpdate(_textController.text, _position, _fontSize, _width);
                   },
@@ -742,8 +795,122 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                     ),
                   ),
                 ),
+                if (widget.textBox.isLatex) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: widget.textBox.color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.functions_rounded, size: 12, color: widget.textBox.color),
+                        const SizedBox(width: 3),
+                        Text(
+                          'LaTeX',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: widget.textBox.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
+            if (widget.textBox.isLatex) ...[
+              const SizedBox(height: 6),
+              Container(
+                constraints: const BoxConstraints(minHeight: 38),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: widget.textBox.color.withValues(alpha: 0.25),
+                    width: 1,
+                  ),
+                ),
+                child: Center(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Math.tex(
+                      _textController.text.trim().isEmpty ? r'\dots' : _textController.text,
+                      textStyle: TextStyle(
+                        color: widget.textBox.color,
+                        fontSize: _fontSize,
+                      ),
+                      mathStyle: MathStyle.display,
+                      onErrorFallback: (err) => Text(
+                        err.message,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: math.max(10.0, _fontSize * 0.65),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              ValueListenableBuilder<EditorSettings>(
+                valueListenable: EditorSettingsService.settingsNotifier,
+                builder: (context, settings, _) {
+                  final ops = settings.latexQuickOperators;
+                  if (ops.isEmpty) return const SizedBox.shrink();
+                  return Container(
+                    height: 58,
+                    margin: const EdgeInsets.only(bottom: 4),
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: ops.length,
+                      separatorBuilder: (context, index) => const SizedBox(width: 5),
+                      itemBuilder: (context, idx) {
+                        final op = ops[idx];
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(5),
+                          onTap: () => _insertOperator(op),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: widget.textBox.color.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: widget.textBox.color.withValues(alpha: 0.22),
+                                width: 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Math.tex(
+                              op,
+                              textStyle: TextStyle(
+                                fontSize: 13,
+                                color: widget.textBox.color,
+                              ),
+                              mathStyle: MathStyle.display,
+                              onErrorFallback: (_) => Text(
+                                op,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: widget.textBox.color,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: 4),
             TextField(
               controller: _textController,
@@ -755,19 +922,22 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
               cursorColor: widget.textBox.color,
               style: TextStyle(
                 color: widget.textBox.color,
-                fontSize: _fontSize,
+                fontSize: widget.textBox.isLatex ? math.max(13.0, _fontSize * 0.85) : _fontSize,
                 fontWeight: FontWeight.w600,
                 height: 1.3,
-                fontFamily: _fontFamilyName,
+                fontFamily: widget.textBox.isLatex ? 'monospace' : widget.textBoxFont.cssFontFamily,
               ),
               decoration: InputDecoration(
                 isDense: true,
-                contentPadding: EdgeInsets.zero,
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
                 border: InputBorder.none,
-                hintText: 'Type text...',
+                hintText: widget.textBox.isLatex ? r'Type LaTeX (e.g. \frac{a}{b})' : 'Type text...',
                 hintStyle: TextStyle(color: Colors.black38, fontSize: _fontSize),
               ),
               onChanged: (val) {
+                if (widget.textBox.isLatex) {
+                  setState(() {});
+                }
                 widget.onUpdate(val, _position, _fontSize, _width);
               },
             ),
@@ -795,7 +965,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                     onPanStart: (_) => _startLayoutDrag(),
                     onPanUpdate: (details) {
                       setState(() {
-                        _width = math.max(80.0, _width + details.delta.dx / scale);
+                        _width = math.max(80.0, _width + details.delta.dx / _currentScale);
                       });
                       widget.onUpdate(_textController.text, _position, _fontSize, _width);
                     },
@@ -831,18 +1001,44 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
       return const SizedBox.shrink();
     }
 
-    final textContent = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onStartEditing,
-      onPanStart: (_) => _startLayoutDrag(),
-      onPanUpdate: (details) {
-        setState(() {
-          _position += details.delta / scale;
-        });
-        widget.onUpdate(widget.textBox.text, _position, _fontSize, _width);
-      },
-      onPanEnd: (_) => _commitLayoutDrag(),
-      child: Container(
+    final Widget displayedWidget;
+    if (widget.textBox.isLatex) {
+      displayedWidget = Container(
+        width: _width,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: widget.textBox.color.withValues(alpha: 0.3),
+            width: 1.0,
+          ),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: RepaintBoundary(
+            key: _repaintKey,
+            child: Math.tex(
+              widget.textBox.text,
+              textStyle: TextStyle(
+                color: widget.textBox.color,
+                fontSize: widget.textBox.fontSize,
+              ),
+              mathStyle: MathStyle.display,
+              onErrorFallback: (err) => Text(
+                widget.textBox.text,
+                style: TextStyle(
+                  color: widget.textBox.color,
+                  fontSize: widget.textBox.fontSize,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } else {
+      displayedWidget = Container(
         width: _width,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         decoration: BoxDecoration(
@@ -861,10 +1057,24 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
             fontSize: widget.textBox.fontSize,
             fontWeight: FontWeight.w500,
             height: 1.3,
-            fontFamily: _fontFamilyName,
+            fontFamily: widget.textBoxFont.cssFontFamily,
           ),
         ),
-      ),
+      );
+    }
+
+    final textContent = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onStartEditing,
+      onPanStart: (_) => _startLayoutDrag(),
+      onPanUpdate: (details) {
+        setState(() {
+          _position += details.delta / _currentScale;
+        });
+        widget.onUpdate(widget.textBox.text, _position, _fontSize, _width);
+      },
+      onPanEnd: (_) => _commitLayoutDrag(),
+      child: displayedWidget,
     );
 
     final resizeHandle = Positioned(
@@ -877,7 +1087,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
           onPanStart: (_) => _startLayoutDrag(),
           onPanUpdate: (details) {
             setState(() {
-              _width = math.max(80.0, _width + details.delta.dx / scale);
+              _width = math.max(80.0, _width + details.delta.dx / _currentScale);
             });
             widget.onUpdate(widget.textBox.text, _position, _fontSize, _width);
           },

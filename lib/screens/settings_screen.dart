@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import '../services/editor_settings_service.dart';
 import '../services/pdf_scanner_service.dart';
 import '../services/pdf_thumbnail_service.dart';
@@ -65,7 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void _showClearCacheDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.cleaning_services_rounded, color: Colors.orange),
@@ -78,15 +79,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               await PdfThumbnailService.instance.clearAllCache();
               if (!mounted) return;
-              ScaffoldMessenger.of(this.context).showSnackBar(
+              ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Thumbnail cache cleared successfully'),
                   duration: Duration(seconds: 2),
@@ -313,11 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
-                            fontFamily: _editorSettings.textBoxFont == AppFontFamily.serif
-                                ? 'serif'
-                                : _editorSettings.textBoxFont == AppFontFamily.monospace
-                                    ? 'monospace'
-                                    : 'sans-serif',
+                            fontFamily: _editorSettings.textBoxFont.cssFontFamily,
                           ),
                         ),
                       ],
@@ -327,6 +324,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ),
             ),
           ),
+
+          const SizedBox(height: 12),
+
+          // Math Formula Quick Operators Card
+          _buildMathFormulaOperatorsCard(theme),
 
           const SizedBox(height: 24),
 
@@ -412,7 +414,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 2.0.0',
+                            'Version 2.2.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,
@@ -547,6 +549,128 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
   }
 
+  Future<void> _showAddOperatorDialog() async {
+    final added = await showDialog<String>(
+      context: context,
+      builder: (_) => const _AddOperatorDialog(),
+    );
+    if (added == null || added.isEmpty || !mounted) return;
+    final current = List<String>.from(_editorSettings.latexQuickOperators);
+    if (!current.contains(added)) {
+      current.add(added);
+      final updated = _editorSettings.copyWith(latexQuickOperators: current);
+      setState(() => _editorSettings = updated);
+      await EditorSettingsService.saveSettings(updated);
+    }
+  }
+
+  Widget _buildMathFormulaOperatorsCard(ThemeData theme) {
+    final operators = _editorSettings.latexQuickOperators;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.functions_rounded, color: theme.colorScheme.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Math Formula Operators',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Quick shortcuts available when editing mathematical formulas',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (int i = 0; i < operators.length; i++)
+                  InputChip(
+                    label: Math.tex(
+                      operators[i],
+                      textStyle: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      mathStyle: MathStyle.display,
+                      onErrorFallback: (_) => Text(
+                        operators[i],
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    deleteIcon: const Icon(Icons.close_rounded, size: 14),
+                    onDeleted: () async {
+                      final updatedList = List<String>.from(operators)..removeAt(i);
+                      final updated = _editorSettings.copyWith(latexQuickOperators: updatedList);
+                      setState(() => _editorSettings = updated);
+                      await EditorSettingsService.saveSettings(updated);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _showAddOperatorDialog,
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Add Operator'),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final updated = _editorSettings.copyWith(latexQuickOperators: kDefaultLatexOperators);
+                    setState(() => _editorSettings = updated);
+                    await EditorSettingsService.saveSettings(updated);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Operators reset to default'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.restore_rounded, size: 16),
+                  label: const Text('Reset Defaults'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _openGitHubUrl(BuildContext context) async {
     const url = 'https://github.com/yingongsui/PDFREOR';
     try {
@@ -566,5 +690,91 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         const SnackBar(content: Text('GitHub link copied to clipboard')),
       );
     }
+  }
+}
+
+class _AddOperatorDialog extends StatefulWidget {
+  const _AddOperatorDialog();
+
+  @override
+  State<_AddOperatorDialog> createState() => _AddOperatorDialogState();
+}
+
+class _AddOperatorDialogState extends State<_AddOperatorDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = _controller.text.trim();
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.functions_rounded, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('Add Math Operator'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Enter a LaTeX operator or formula snippet to add to the quick bar:',
+            style: TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: r'e.g. \vec{v}, \mathbb{R}, \nabla',
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            constraints: const BoxConstraints(minHeight: 38),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            alignment: Alignment.center,
+            child: Math.tex(
+              text.isEmpty ? r'\dots' : text,
+              textStyle: const TextStyle(fontSize: 16),
+              mathStyle: MathStyle.display,
+              onErrorFallback: (err) => Text(
+                'Invalid: ${err.message}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: text.isEmpty ? null : () => Navigator.pop(context, text),
+          child: const Text('Add'),
+        ),
+      ],
+    );
   }
 }

@@ -118,12 +118,6 @@ class PdfScannerService {
     await _saveLibrary();
   }
 
-  Future<void> removeCustomFolder(String path) async {
-    await _ensureLibraryLoaded();
-    _customFolders.remove(path);
-    await _saveLibrary();
-  }
-
   Future<void> addImportedFilePaths(Iterable<String> paths) async {
     await _ensureLibraryLoaded();
     _importedFilePaths.addAll(paths);
@@ -131,8 +125,18 @@ class PdfScannerService {
   }
 
   Future<void> removeImportedFilePath(String path) async {
+    await removeImportedFilePaths([path]);
+  }
+
+  Future<void> removeImportedFilePaths(Iterable<String> paths) async {
     await _ensureLibraryLoaded();
-    if (_importedFilePaths.remove(path)) {
+    bool changed = false;
+    for (final path in paths) {
+      if (_importedFilePaths.remove(path)) {
+        changed = true;
+      }
+    }
+    if (changed) {
       await _saveLibrary();
     }
   }

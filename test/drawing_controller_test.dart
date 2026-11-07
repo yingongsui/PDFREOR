@@ -8,6 +8,7 @@ void main() {
   group('DrawingController & Stroke Eraser Tests', () {
     test('Draw stroke, erase continuous stroke upon touch, and undo', () {
       final controller = DrawingController();
+      addTearDown(controller.dispose);
 
       // 1. Draw a stroke from (10, 10) to (50, 50)
       controller.startStroke(const Offset(10, 10), 1.0);
@@ -37,6 +38,7 @@ void main() {
 
     test('Draw shape, erase shape, and undo', () {
       final controller = DrawingController();
+      addTearDown(controller.dispose);
 
       // Draw rectangle from (20, 20) to (100, 100)
       controller.startShape(const Offset(20, 20));
@@ -57,6 +59,7 @@ void main() {
 
     test('Single-point dot drawing and erasing', () {
       final controller = DrawingController();
+      addTearDown(controller.dispose);
 
       controller.startStroke(const Offset(45, 45), 1.0);
       controller.endStroke(Colors.red, 4.0, 1);
@@ -71,6 +74,7 @@ void main() {
 
     test('Unsaved changes tracking and markSaved', () {
       final controller = DrawingController();
+      addTearDown(controller.dispose);
       expect(controller.hasUnsavedChanges, false);
 
       // Add a stroke -> should have unsaved changes
@@ -78,9 +82,10 @@ void main() {
       controller.endStroke(Colors.black, 2.0, 1);
       expect(controller.hasUnsavedChanges, true);
 
-      // Mark saved -> should be false
+      // Mark saved -> should be false while strokes still exist
       controller.markSaved();
-      expect(controller.strokes.isNotEmpty, true); // strokes exist
+      expect(controller.hasUnsavedChanges, false);
+      expect(controller.strokes.isNotEmpty, true);
       controller.clearAll();
       expect(controller.hasUnsavedChanges, false);
 
@@ -120,6 +125,7 @@ void main() {
 
     test('Shape editing, hit testing, resizing and undo', () {
       final controller = DrawingController();
+      addTearDown(controller.dispose);
 
       // 1. Draw a rectangle
       controller.startShape(const Offset(50, 50));
@@ -222,12 +228,14 @@ void main() {
       expect(controller.images.first.width, 100);
       expect(controller.images.first.height, 80);
 
-      // Viewport width rescaling (portrait 400px -> landscape 800px)
-      final oldBounds = [const Rect.fromLTWH(0, 0, 400, 600)];
-      final newBounds = [const Rect.fromLTWH(0, 0, 800, 1200)];
-      controller.rescaleAnnotations(oldBounds, newBounds);
-      expect(controller.images.first.position, const Offset(40, 60));
-      expect(controller.images.first.width, 200);
+      // Oval / ellipse perimeter hit-testing accuracy
+      controller.startShape(const Offset(0, 100));
+      controller.updateShape(const Offset(400, 220));
+      controller.endShape(ShapeType.circle, Colors.green, 2.0, 1);
+      expect(controller.hitTestShape(const Offset(200, 100)), isNotNull); // top arc
+      expect(controller.hitTestShape(const Offset(200, 220)), isNotNull); // bottom arc
+      expect(controller.hitTestShape(const Offset(200, 0)), isNull); // outside minor axis
+      expect(controller.hitTestShape(const Offset(200, 160)), isNull); // hollow center
 
       controller.dispose();
     });

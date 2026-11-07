@@ -17,12 +17,16 @@ class PdfPageManagerDialog extends StatefulWidget {
   final PdfFileInfo? file;
   final int totalPages;
   final int currentPage;
+  final List<int> initialDeletedZeroIndexedPages;
+  final int initialAddedPagesCount;
 
   const PdfPageManagerDialog({
     super.key,
     this.file,
     required this.totalPages,
     required this.currentPage,
+    this.initialDeletedZeroIndexedPages = const [],
+    this.initialAddedPagesCount = 0,
   });
 
   @override
@@ -36,7 +40,16 @@ class _PdfPageManagerDialogState extends State<PdfPageManagerDialog> {
   @override
   void initState() {
     super.initState();
-    _currentPages = List.generate(widget.totalPages, (i) => i + 1);
+    final deletedSet = widget.initialDeletedZeroIndexedPages.toSet();
+    _currentPages = [
+      for (int i = 0; i < widget.totalPages; i++)
+        if (!deletedSet.contains(i)) i + 1,
+      for (int i = 1; i <= widget.initialAddedPagesCount; i++) -i,
+    ];
+    if (_currentPages.isEmpty && widget.totalPages > 0) {
+      _currentPages = [1];
+    }
+    _addedCount = widget.initialAddedPagesCount;
   }
 
   void _addBlankPage() {

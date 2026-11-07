@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import 'editor_settings_service.dart';
+import 'latex_rasterizer.dart';
 
 class PdfExportService {
   PdfExportService._();
@@ -58,30 +60,8 @@ class PdfExportService {
   }
 
   /// Atomically writes UTF-8 [content] to [targetFile].
-  static Future<void> atomicWriteString(File targetFile, String content) async {
-    final parent = targetFile.parent;
-    if (!await parent.exists()) {
-      await parent.create(recursive: true);
-    }
-    final tempPath = '${targetFile.path}.tmp.${DateTime.now().microsecondsSinceEpoch}';
-    final tempFile = File(tempPath);
-    try {
-      await tempFile.writeAsString(content, flush: true);
-      try {
-        await tempFile.rename(targetFile.path);
-      } on FileSystemException {
-        await tempFile.copy(targetFile.path);
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
-      }
-    } finally {
-      try {
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
-      } catch (_) {}
-    }
+  static Future<void> atomicWriteString(File targetFile, String content) {
+    return atomicWriteBytes(targetFile, utf8.encode(content));
   }
 
   /// Renders all annotations from [drawingController], applies staged page deletions
@@ -96,7 +76,7 @@ class PdfExportService {
     double pageSpacing = 4.0,
     List<Rect>? pageDocBounds,
   }) async {
-    final doc = sf.PdfDocument(inputBytes: Uint8List.fromList(baseBytes));
+    final doc = sf.PdfDocument(inputBytes: baseBytes);
     try {
       doc.compressionLevel = sf.PdfCompressionLevel.best;
       doc.fileStructure.crossReferenceType = sf.PdfCrossReferenceType.crossReferenceStream;
@@ -342,6 +322,31 @@ class PdfExportService {
           ((tb.position.dx - bounds.left) + 4) * scaleX,
           (tb.position.dy + 2 - bounds.top) * scaleY,
         );
+
+        if (tb.isLatex) {
+          Uint8List? imageBytes = tb.renderedImageBytes;
+          Size? imageSize = tb.renderedSize;
+          if (imageBytes == null) {
+            final res = await LatexRasterizer.rasterize(
+              latex: tb.text,
+              fontSize: tb.fontSize,
+              color: tb.color,
+            );
+            imageBytes = res?.bytes;
+            imageSize = res?.size;
+          }
+          if (imageBytes != null && imageBytes.isNotEmpty) {
+            final pdfImage = sf.PdfBitmap(imageBytes);
+            final renderW = (imageSize?.width ?? (tb.width ?? 140.0)) * scaleX;
+            final renderH = (imageSize?.height ?? (tb.fontSize * 1.8)) * scaleY;
+            page.graphics.drawImage(
+              pdfImage,
+              Rect.fromLTWH(pos.dx, pos.dy, renderW, renderH),
+            );
+          }
+          continue;
+        }
+
         final tbWidth = (tb.width ?? 220.0) * scaleX;
 
         final isPureAscii = tb.text.codeUnits.every(
@@ -414,20 +419,31 @@ class PdfExportService {
             ),
             textDirection: TextDirection.ltr,
           );
-          textPainter.layout(maxWidth: tbWidth * renderScale);
+          ByteData? byteData;
+          int pWidth = 1;
+          int pHeight = 1;
+          try {
+            textPainter.layout(maxWidth: tbWidth * renderScale);
 
-          final pWidth = math.max(1, textPainter.width.ceil());
-          final pHeight = math.max(1, textPainter.height.ceil());
+            pWidth = math.max(1, textPainter.width.ceil());
+            pHeight = math.max(1, textPainter.height.ceil());
 
-          final recorder = ui.PictureRecorder();
-          final canvas = Canvas(recorder);
-          textPainter.paint(canvas, Offset.zero);
+            final recorder = ui.PictureRecorder();
+            final canvas = Canvas(recorder);
+            textPainter.paint(canvas, Offset.zero);
 
-          final picture = recorder.endRecording();
-          final img = await picture.toImage(pWidth, pHeight);
-          final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-          picture.dispose();
-          img.dispose();
+            final picture = recorder.endRecording();
+            ui.Image? img;
+            try {
+              img = await picture.toImage(pWidth, pHeight);
+              byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+            } finally {
+              img?.dispose();
+              picture.dispose();
+            }
+          } finally {
+            textPainter.dispose();
+          }
 
           if (byteData != null) {
             final pngBytes = byteData.buffer.asUint8List();

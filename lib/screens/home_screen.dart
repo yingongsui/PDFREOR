@@ -77,8 +77,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadPreferences();
-    PdfTabManager.instance.init();
-    ReadingProgressService.instance.init();
     PdfTabManager.instance.addListener(_onTabStateChanged);
     _intentChannel.setMethodCallHandler(_handleIntentChannelCall);
     _intentChannel.invokeMethod<String>('consumeInitialPdfPath').then((path) {
@@ -129,21 +127,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final folderSortStr = await _scannerService.getFolderSort();
       final fileSortStr = await _scannerService.getFileSort();
 
-      FolderSortType fSort = FolderSortType.nameAsc;
-      for (final v in FolderSortType.values) {
-        if (v.name == folderSortStr) {
-          fSort = v;
-          break;
-        }
-      }
-
-      SortType sSort = SortType.dateDesc;
-      for (final v in SortType.values) {
-        if (v.name == fileSortStr) {
-          sSort = v;
-          break;
-        }
-      }
+      final fSort = FolderSortType.values.asNameMap()[folderSortStr] ?? FolderSortType.nameAsc;
+      final sSort = SortType.values.asNameMap()[fileSortStr] ?? SortType.dateDesc;
 
       if (mounted) {
         setState(() {
@@ -158,7 +143,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onTabStateChanged() {
-    if (mounted) setState(() {});
+    if (!mounted || _isViewerRouteOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isViewerRouteOpen) setState(() {});
+    });
   }
 
   @override
@@ -233,15 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final files = await _scannerService.scanStorage(
-        progressCallback: (currentFolder, foundCount) {
-          if (mounted) {
-            setState(() {
-              _scanStatusText = 'Found $foundCount PDF files...';
-            });
-          }
-        },
-      );
+      final files = await _scannerService.scanStorage();
 
       if (mounted) {
         setState(() {
@@ -421,19 +401,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _cachedGroupedEntries = null;
   }
 
-  void _openPdfViewer(PdfFileInfo file) {
-    PdfTabManager.instance.openTab(file);
+  void _pushViewerRoute(PdfFileInfo activeFile) {
     if (_isViewerRouteOpen) return;
     _isViewerRouteOpen = true;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PdfViewerScreen(file: file),
+        builder: (context) => PdfViewerScreen(file: activeFile),
       ),
     ).whenComplete(() {
       _isViewerRouteOpen = false;
       if (mounted) setState(() {});
     });
+  }
+
+  void _openPdfViewer(PdfFileInfo file) {
+    PdfTabManager.instance.openTab(file);
+    _pushViewerRoute(file);
   }
 
   Future<void> _openExternal(PdfFileInfo file) async {
@@ -474,83 +458,13 @@ class _HomeScreenState extends State<HomeScreen> {
     HapticFeedback.mediumImpact();
     final ext = p.extension(file.path);
     final baseName = p.basenameWithoutExtension(file.path);
-    final textController = TextEditingController(text: baseName);
-    final formKey = GlobalKey<FormState>();
 
-    final confirmed = await showDialog<bool>(
+    final newBaseName = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.drive_file_rename_outline_rounded, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('Rename PDF'),
-          ],
-        ),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Enter new name for the document:',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: textController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'File Name',
-                  suffixText: ext,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                ),
-                validator: (val) {
-                  final trimmed = val?.trim() ?? '';
-                  if (trimmed.isEmpty) {
-                    return 'File name cannot be empty';
-                  }
-                  if (trimmed.contains(RegExp(r'[\\/:*?"<>|]'))) {
-                    return 'Cannot contain \\ / : * ? " < > |';
-                  }
-                  return null;
-                },
-                onFieldSubmitted: (_) {
-                  if (formKey.currentState?.validate() ?? false) {
-                    Navigator.pop(dialogContext, true);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.pop(dialogContext, true);
-              }
-            },
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
+      builder: (_) => _RenameFileDialog(initialName: baseName, extensionText: ext),
     );
 
-    if (confirmed != true) return;
-
-    final newBaseName = textController.text.trim();
-    if (newBaseName == baseName) return;
+    if (newBaseName == null || newBaseName.isEmpty || newBaseName == baseName) return;
 
     final newFileName = '$newBaseName$ext';
     final parentDir = File(file.path).parent;
@@ -576,11 +490,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await _scannerService.renameImportedFilePath(file.path, newPath);
 
-      // Invalidate old thumbnail cache
+      // Invalidate old thumbnail cache and update open tabs / reading progress
       PdfThumbnailService.instance.invalidate(file.path);
-      ReadingProgressService.instance.renamePath(file.path, newPath);
-
-      // Update in open tabs if present
       PdfTabManager.instance.renameTab(file.path, updatedFileInfo);
 
       // Update in memory file list
@@ -756,13 +667,13 @@ class _HomeScreenState extends State<HomeScreen> {
             }
             await _scannerService.renameImportedFilePath(sourcePath, finalDestPath);
             PdfThumbnailService.instance.invalidate(sourcePath);
-            ReadingProgressService.instance.renamePath(sourcePath, finalDestPath);
             try {
               PdfTabManager.instance.renameTab(
                 sourcePath,
                 PdfFileInfo.fromFile(File(finalDestPath)),
               );
             } catch (_) {
+              ReadingProgressService.instance.renamePath(sourcePath, finalDestPath);
               PdfTabManager.instance.closeTabByPath(sourcePath);
             }
             successCount++;
@@ -868,17 +779,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeFile = targetFile ?? selectedFiles.first;
     PdfTabManager.instance.openMultipleTabs(selectedFiles, activePath: activeFile.path);
     _exitSelectionMode();
-    if (_isViewerRouteOpen) return;
-    _isViewerRouteOpen = true;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PdfViewerScreen(file: activeFile),
-      ),
-    ).whenComplete(() {
-      _isViewerRouteOpen = false;
-      if (mounted) setState(() {});
-    });
+    _pushViewerRoute(activeFile);
   }
 
   Future<void> _shareSelectedFiles() async {
@@ -923,24 +824,32 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (confirmed == true) {
+      final deletedPaths = <String>{};
       for (final path in _selectedFilePaths.toList()) {
         try {
           final file = File(path);
           if (await file.exists()) {
             await file.delete();
           }
-          await _scannerService.removeImportedFilePath(path);
+          deletedPaths.add(path);
           PdfThumbnailService.instance.invalidate(path);
           ReadingProgressService.instance.removePath(path);
           PdfTabManager.instance.closeTabByPath(path);
         } catch (_) {}
       }
-      _clipboardFiles.removeWhere((item) => _selectedFilePaths.contains(item.path));
-      if (_clipboardFiles.isEmpty) {
-        _isCutMode = false;
+      await _scannerService.removeImportedFilePaths(deletedPaths);
+      if (mounted) {
+        setState(() {
+          _clipboardFiles.removeWhere((item) => deletedPaths.contains(item.path));
+          if (_clipboardFiles.isEmpty) {
+            _isCutMode = false;
+          }
+          _allFiles.removeWhere((f) => deletedPaths.contains(f.path));
+          _isSelectionMode = false;
+          _selectedFilePaths.clear();
+          _applyFilterAndSort();
+        });
       }
-      _exitSelectionMode();
-      await _startScan();
     }
   }
 
@@ -1704,11 +1613,20 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
+              if (!mounted) return;
+              final granted = await _scannerService.hasStoragePermission();
+              if (!mounted) return;
+              if (granted != _hasPermission) {
+                setState(() => _hasPermission = granted);
+                if (granted && _allFiles.isEmpty) {
+                  _startScan();
+                }
+              }
             },
           ),
         ],
@@ -1739,7 +1657,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
 
-              // Top Rounded Rectangle for Open Tabs Count (User Request 3)
+              // Open Tabs Banner
               if (PdfTabManager.instance.tabCount > 0)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -1855,9 +1773,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Main Content
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: _startScan,
-                  child: _buildBody(theme),
+                child: Column(
+                  children: [
+                    if (_sortedGroupedEntries.isNotEmpty)
+                      _buildFoldersHeaderBar(_sortedGroupedEntries, theme),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _startScan,
+                        child: _buildBody(theme),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1897,9 +1823,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(width: 10),
                         Flexible(
                           child: Text(
-                            _scanStatusText.isNotEmpty
-                                ? _scanStatusText
-                                : 'Refreshing library...',
+                            _scanStatusText,
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -1944,8 +1868,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final entries = groups.entries.toList();
 
     String getFolderName(String folderPath) {
-      final segments = folderPath.split(Platform.pathSeparator).where((s) => s.isNotEmpty).toList();
-      return segments.isNotEmpty ? segments.last.toLowerCase() : folderPath.toLowerCase();
+      final base = p.basename(folderPath);
+      return (base.isNotEmpty ? base : folderPath).toLowerCase();
     }
 
     DateTime getLatestDate(List<PdfFileInfo> files) {
@@ -2077,8 +2001,8 @@ class _HomeScreenState extends State<HomeScreen> {
     ThemeData theme,
   ) {
     final isCollapsed = _collapsedFolders.contains(folderPath);
-    final segments = folderPath.split(Platform.pathSeparator).where((s) => s.isNotEmpty).toList();
-    final folderName = segments.isNotEmpty ? segments.last : folderPath;
+    final baseName = p.basename(folderPath);
+    final folderName = baseName.isNotEmpty ? baseName : folderPath;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -2262,13 +2186,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final groupedEntries = _sortedGroupedEntries;
+    final openPaths = PdfTabManager.instance.openTabs.map((t) => t.path).toSet();
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (groupedEntries.isNotEmpty)
-          SliverToBoxAdapter(
-            child: _buildFoldersHeaderBar(groupedEntries, theme),
-          ),
         for (final entry in groupedEntries) ...[
           SliverToBoxAdapter(
             child: _buildFolderBanner(entry.key, entry.value, theme),
@@ -2290,7 +2211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       return PdfThumbnailCard(
                         key: ValueKey(file.path),
                         file: file,
-                        isOpen: PdfTabManager.instance.isOpen(file.path),
+                        isOpen: openPaths.contains(file.path),
                         isSelectionMode: _isSelectionMode,
                         isSelected: _selectedFilePaths.contains(file.path),
                         onTap: () => _onFileTap(file),
@@ -2311,7 +2232,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       return PdfListTile(
                         key: ValueKey(file.path),
                         file: file,
-                        isOpen: PdfTabManager.instance.isOpen(file.path),
+                        isOpen: openPaths.contains(file.path),
                         isSelectionMode: _isSelectionMode,
                         isSelected: _selectedFilePaths.contains(file.path),
                         onTap: () => _onFileTap(file),
@@ -2326,6 +2247,104 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
         const SliverPadding(
           padding: EdgeInsets.only(bottom: 80),
+        ),
+      ],
+    );
+  }
+}
+
+class _RenameFileDialog extends StatefulWidget {
+  final String initialName;
+  final String extensionText;
+
+  const _RenameFileDialog({
+    required this.initialName,
+    required this.extensionText,
+  });
+
+  @override
+  State<_RenameFileDialog> createState() => _RenameFileDialogState();
+}
+
+class _RenameFileDialogState extends State<_RenameFileDialog> {
+  late final TextEditingController _controller;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState?.validate() ?? false) {
+      Navigator.pop(context, _controller.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(
+        children: [
+          Icon(Icons.drive_file_rename_outline_rounded, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('Rename PDF'),
+        ],
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter new name for the document:',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'File Name',
+                suffixText: widget.extensionText,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+              ),
+              validator: (val) {
+                final trimmed = val?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return 'File name cannot be empty';
+                }
+                if (trimmed.contains(RegExp(r'[\\/:*?"<>|]'))) {
+                  return 'Cannot contain \\ / : * ? " < > |';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Rename'),
         ),
       ],
     );

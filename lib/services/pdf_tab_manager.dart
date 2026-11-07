@@ -162,11 +162,4 @@ class PdfTabManager extends ChangeNotifier {
       _persistTabs().ignore();
     }
   }
-
-  void clearAll() {
-    _openTabs.clear();
-    _activeIndex = 0;
-    notifyListeners();
-    _persistTabs().ignore();
-  }
 }

@@ -51,7 +51,6 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     }
 
     private fun requestHighRefreshRate() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
         try {
             val currentDisplay = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 display
@@ -141,7 +140,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "isStylusConnected" -> {
-                    val connected = isStylusConnected()
+                    val connected = stylusNotified || isStylusConnected()
                     if (connected) stylusNotified = true
                     result.success(connected)
                 }
@@ -154,10 +153,13 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                                 val item = clip.getItemAt(i)
                                 val uri = item.uri
                                 if (uri != null) {
-                                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                    if (bytes != null && bytes.isNotEmpty()) {
-                                        result.success(bytes)
-                                        return@setMethodCallHandler
+                                    val mime = contentResolver.getType(uri)
+                                    if (mime == null || mime.startsWith("image/")) {
+                                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                        if (bytes != null && bytes.isNotEmpty()) {
+                                            result.success(bytes)
+                                            return@setMethodCallHandler
+                                        }
                                     }
                                 }
                             }
@@ -173,7 +175,6 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                     if (url != null) {
                         try {
                             val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             startActivity(browserIntent)
                             result.success(true)
                         } catch (e: Exception) {
@@ -246,6 +247,15 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         }
     }
 
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        inputManager?.unregisterInputDeviceListener(this)
+        stylusChannel?.setMethodCallHandler(null)
+        intentChannel?.setMethodCallHandler(null)
+        stylusChannel = null
+        intentChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
     private fun handleIncomingIntent(incoming: Intent?, notifyLive: Boolean) {
         if (incoming == null) return
         if (incoming.action != Intent.ACTION_VIEW) return
@@ -253,9 +263,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
 
         val resolvedPath = resolvePdfUriToPath(uri) ?: return
         if (notifyLive && intentChannel != null) {
-            runOnUiThread {
-                intentChannel?.invokeMethod("onOpenExternalPdf", resolvedPath)
-            }
+            intentChannel?.invokeMethod("onOpenExternalPdf", resolvedPath)
         } else {
             pendingPdfPath = resolvedPath
         }
@@ -404,14 +412,10 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         if (isLenovoPenKey) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.repeatCount == 0) {
-                    runOnUiThread {
-                        stylusChannel?.invokeMethod("onStylusButtonDown", null)
-                    }
+                    stylusChannel?.invokeMethod("onStylusButtonDown", null)
                 }
             } else if (event.action == KeyEvent.ACTION_UP) {
-                runOnUiThread {
-                    stylusChannel?.invokeMethod("onStylusButtonUp", null)
-                }
+                stylusChannel?.invokeMethod("onStylusButtonUp", null)
             }
             return true
         }

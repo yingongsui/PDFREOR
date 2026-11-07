@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 
 class PdfFileInfo {
   final String path;
@@ -22,8 +23,8 @@ class PdfFileInfo {
       modified = stat.modified;
     } catch (_) {}
 
-    final segments = file.path.split(Platform.pathSeparator).where((seg) => seg.isNotEmpty);
-    final name = segments.isNotEmpty ? segments.last : 'document.pdf';
+    final base = p.basename(file.path);
+    final name = base.isNotEmpty ? base : 'document.pdf';
     return PdfFileInfo(
       path: file.path,
       name: name,
@@ -44,21 +45,9 @@ class PdfFileInfo {
     }
   }
 
-  String get parentDirectoryName {
-    final segments = path.split(Platform.pathSeparator);
-    if (segments.length >= 2) {
-      return segments[segments.length - 2];
-    }
-    return '';
-  }
+  String get parentDirectoryName => p.basename(p.dirname(path));
 
-  String get parentDirectoryPath {
-    final idx = path.lastIndexOf(Platform.pathSeparator);
-    if (idx != -1) {
-      return path.substring(0, idx);
-    }
-    return '';
-  }
+  String get parentDirectoryPath => p.dirname(path);
 
   @override
   bool operator ==(Object other) =>

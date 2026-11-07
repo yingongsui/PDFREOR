@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +76,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
   VoidCallback? onOneShotShapeCompleted;
   VoidCallback? onStylusDetected;
   VoidCallback? onStylusDrawStarted;
+  VoidCallback? onShapeCompleted;
   String? selectedShapeId;
 
   StylusDrawingGestureRecognizer({
@@ -95,6 +95,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.onOneShotShapeCompleted,
     this.onStylusDetected,
     this.onStylusDrawStarted,
+    this.onShapeCompleted,
     this.selectedShapeId,
   });
 
@@ -114,6 +115,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     VoidCallback? onOneShotShapeCompleted,
     VoidCallback? onStylusDetected,
     VoidCallback? onStylusDrawStarted,
+    VoidCallback? onShapeCompleted,
     String? selectedShapeId,
   }) {
     this.stylusOnly = stylusOnly;
@@ -131,23 +133,13 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.onOneShotShapeCompleted = onOneShotShapeCompleted;
     this.onStylusDetected = onStylusDetected;
     this.onStylusDrawStarted = onStylusDrawStarted;
+    this.onShapeCompleted = onShapeCompleted;
     this.selectedShapeId = selectedShapeId;
   }
 
   bool _isStylus(PointerEvent event) {
-    if (event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus) {
-      return true;
-    }
-    if (event.kind == PointerDeviceKind.unknown) {
-      return true;
-    }
-    if (event.kind == PointerDeviceKind.touch) {
-      if (event.pressure > 0.0 && event.pressure != 1.0) {
-        return true;
-      }
-    }
-    return false;
+    return event.kind == PointerDeviceKind.stylus ||
+        event.kind == PointerDeviceKind.invertedStylus;
   }
 
   bool _isEraserActive(PointerEvent event) {
@@ -264,7 +256,15 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
         controller.endShape(oneShotShape!, activeColor, activeStrokeWidth, page);
         onOneShotShapeCompleted?.call();
       } else if (activeTool == EditorTool.shape) {
+        final distance = (controller.activeShapeEnd != null && controller.activeShapeStart != null)
+            ? (controller.activeShapeEnd! - controller.activeShapeStart!).distance
+            : 0.0;
+        if (distance <= 5) {
+          controller.startShape(docPos - const Offset(50, 30));
+          controller.updateShape(docPos + const Offset(50, 30));
+        }
         controller.endShape(activeShape, activeColor, activeStrokeWidth, page);
+        onShapeCompleted?.call();
       } else {
         controller.endStroke(activeColor, activeStrokeWidth, page);
       }
@@ -277,32 +277,6 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void didStopTrackingLastPointer(int pointer) {}
-}
-
-IconData _getShapeIcon(ShapeType type) {
-  switch (type) {
-    case ShapeType.rectangle:
-      return Icons.rectangle_outlined;
-    case ShapeType.circle:
-      return Icons.circle_outlined;
-    case ShapeType.line:
-      return Icons.horizontal_rule_rounded;
-    case ShapeType.arrow:
-      return Icons.arrow_forward_rounded;
-  }
-}
-
-String _getShapeName(ShapeType type) {
-  switch (type) {
-    case ShapeType.rectangle:
-      return 'Rectangle';
-    case ShapeType.circle:
-      return 'Circle';
-    case ShapeType.line:
-      return 'Line';
-    case ShapeType.arrow:
-      return 'Arrow';
-  }
 }
 
 class PdfEditorCanvas extends StatefulWidget {
@@ -321,7 +295,6 @@ class PdfEditorCanvas extends StatefulWidget {
   final VoidCallback? onOneShotShapeCompleted;
   final VoidCallback? onCancelOneShotShape;
   final bool hasActiveTextSelection;
-  final void Function(Offset screenPos, Offset docPos)? onNonTextLongPressed;
   final String? editingTextBoxId;
   final ValueChanged<String?>? onEditingTextBoxChanged;
   final String? selectedShapeId;
@@ -332,6 +305,8 @@ class PdfEditorCanvas extends StatefulWidget {
   final ValueChanged<String?>? onSelectedTextAnnotationChanged;
   final ValueChanged<bool>? onPointerEraserStateChanged;
   final ValueChanged<Offset> onAddTextBoxRequested;
+  final ValueChanged<Offset>? onAddLatexBoxRequested;
+  final VoidCallback? onShapeCompleted;
   final VoidCallback? onStylusDetected;
   final VoidCallback? onStylusDrawStarted;
   final AppFontFamily textBoxFont;
@@ -353,7 +328,6 @@ class PdfEditorCanvas extends StatefulWidget {
     this.onOneShotShapeCompleted,
     this.onCancelOneShotShape,
     this.hasActiveTextSelection = false,
-    this.onNonTextLongPressed,
     this.editingTextBoxId,
     this.onEditingTextBoxChanged,
     this.selectedShapeId,
@@ -364,6 +338,8 @@ class PdfEditorCanvas extends StatefulWidget {
     this.onSelectedTextAnnotationChanged,
     this.onPointerEraserStateChanged,
     required this.onAddTextBoxRequested,
+    this.onAddLatexBoxRequested,
+    this.onShapeCompleted,
     this.onStylusDetected,
     this.onStylusDrawStarted,
     this.textBoxFont = AppFontFamily.sansSerif,
@@ -374,9 +350,6 @@ class PdfEditorCanvas extends StatefulWidget {
 }
 
 class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
-  Timer? _longPressTimer;
-  Offset? _pointerDownScreenPos;
-  int? _pointerDownId;
   late Listenable _savedPaintListenable;
   late Listenable _activePaintListenable;
 
@@ -416,7 +389,8 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       widget.activeTool == EditorTool.pen ||
       widget.activeTool == EditorTool.shape ||
       widget.activeTool == EditorTool.eraser ||
-      widget.activeTool == EditorTool.textBox;
+      widget.activeTool == EditorTool.textBox ||
+      widget.activeTool == EditorTool.latexBox;
 
   void _checkPointer(PointerEvent event) {
     if (event.kind == PointerDeviceKind.stylus ||
@@ -468,13 +442,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
             _setSelectedShape(otherShape?.id);
             if (otherShape != null) {
               _setSelectedStroke(null);
-              _longPressTimer?.cancel();
-              _pointerDownScreenPos = null;
               return;
             }
           } else {
-            _longPressTimer?.cancel();
-            _pointerDownScreenPos = null;
             return;
           }
         }
@@ -484,8 +454,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       if (hitShape != null) {
         _setSelectedShape(hitShape.id);
         _setSelectedStroke(null);
-        _longPressTimer?.cancel();
-        _pointerDownScreenPos = null;
         return;
       }
 
@@ -494,8 +462,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         _setSelectedStroke(hitStroke.id);
         _setSelectedShape(null);
         _setSelectedTextAnnotation(null);
-        _longPressTimer?.cancel();
-        _pointerDownScreenPos = null;
         return;
       }
 
@@ -504,8 +470,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         _setSelectedTextAnnotation(hitTa.id);
         _setSelectedShape(null);
         _setSelectedStroke(null);
-        _longPressTimer?.cancel();
-        _pointerDownScreenPos = null;
         return;
       }
 
@@ -531,42 +495,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         }
       }
     }
-
-    if (event.kind == PointerDeviceKind.mouse && (event.buttons & kSecondaryMouseButton) != 0) {
-      if (!widget.hasActiveTextSelection) {
-        widget.onNonTextLongPressed?.call(event.position, docPos);
-      }
-      return;
-    }
-
-    if (widget.oneShotShape != null) return;
-    if (widget.hasActiveTextSelection) return;
-
-    if (isStylus || isEraser || widget.onNonTextLongPressed == null) {
-      _longPressTimer?.cancel();
-      _pointerDownScreenPos = null;
-      return;
-    }
-
-    _pointerDownScreenPos = event.position;
-    _pointerDownId = event.pointer;
-    _longPressTimer?.cancel();
-
-    _longPressTimer = Timer(const Duration(milliseconds: 500), () {
-      if (_pointerDownScreenPos != null && !widget.hasActiveTextSelection) {
-        widget.onNonTextLongPressed?.call(_pointerDownScreenPos!, docPos);
-      }
-      _pointerDownScreenPos = null;
-    });
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
-    if (_pointerDownScreenPos != null && event.pointer == _pointerDownId) {
-      if ((event.position - _pointerDownScreenPos!).distance > kTouchSlop) {
-        _longPressTimer?.cancel();
-        _pointerDownScreenPos = null;
-      }
-    }
     if (event.kind == PointerDeviceKind.touch) {
       return;
     }
@@ -577,18 +508,12 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
     if (event.kind != PointerDeviceKind.touch) {
       _checkPointer(event);
     }
-    if (event.pointer == _pointerDownId) {
-      _longPressTimer?.cancel();
-      _pointerDownScreenPos = null;
-    }
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
     if (event.kind != PointerDeviceKind.touch) {
       _checkPointer(event);
     }
-    _longPressTimer?.cancel();
-    _pointerDownScreenPos = null;
   }
 
   @override
@@ -598,16 +523,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         widget.transformationController != oldWidget.transformationController) {
       _rebuildPaintListenables();
     }
-    if (widget.hasActiveTextSelection) {
-      _longPressTimer?.cancel();
-      _pointerDownScreenPos = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _longPressTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -622,14 +537,16 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         // 1a. Committed strokes & text annotations rendered in viewport space with frustum culling
         Positioned.fill(
           child: IgnorePointer(
-            child: CustomPaint(
-              isComplex: true,
-              painter: _SavedAnnotationsPainter(
-                repaint: _savedPaintListenable,
-                controller: widget.controller,
-                transformationController: widget.transformationController,
-                selectedStrokeId: _selectedStrokeId,
-                selectedTextAnnotationId: _selectedTextAnnotationId,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                isComplex: true,
+                painter: _SavedAnnotationsPainter(
+                  repaint: _savedPaintListenable,
+                  controller: widget.controller,
+                  transformationController: widget.transformationController,
+                  selectedStrokeId: _selectedStrokeId,
+                  selectedTextAnnotationId: _selectedTextAnnotationId,
+                ),
               ),
             ),
           ),
@@ -739,13 +656,13 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        _getShapeIcon(widget.oneShotShape!),
+                        widget.oneShotShape!.icon,
                         size: 18,
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Drag with finger to draw ${_getShapeName(widget.oneShotShape!)}',
+                        'Drag with finger to draw ${widget.oneShotShape!.label}',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.w600,
@@ -770,13 +687,18 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       ],
     );
 
-    if (widget.activeTool == EditorTool.textBox && widget.oneShotShape == null) {
+    if ((widget.activeTool == EditorTool.textBox || widget.activeTool == EditorTool.latexBox) &&
+        widget.oneShotShape == null) {
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTapDown: (details) {
           final docPos = widget.transformationController?.toScene(details.localPosition) ??
               details.localPosition;
-          widget.onAddTextBoxRequested(docPos);
+          if (widget.activeTool == EditorTool.latexBox) {
+            widget.onAddLatexBoxRequested?.call(docPos);
+          } else {
+            widget.onAddTextBoxRequested(docPos);
+          }
         },
         child: content,
       );
@@ -810,6 +732,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               onOneShotShapeCompleted: widget.onOneShotShapeCompleted,
               onStylusDetected: widget.onStylusDetected,
               onStylusDrawStarted: widget.onStylusDrawStarted,
+              onShapeCompleted: widget.onShapeCompleted,
               selectedShapeId: _selectedShapeId,
             ),
             (instance) {
@@ -829,6 +752,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                 onOneShotShapeCompleted: widget.onOneShotShapeCompleted,
                 onStylusDetected: widget.onStylusDetected,
                 onStylusDrawStarted: widget.onStylusDrawStarted,
+                onShapeCompleted: widget.onShapeCompleted,
                 selectedShapeId: _selectedShapeId,
               );
             },
@@ -1120,37 +1044,7 @@ class _ActiveAnnotationPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final rect = Rect.fromPoints(start, end);
-
-    switch (type) {
-      case ShapeType.rectangle:
-        canvas.drawRect(rect, paint);
-        break;
-      case ShapeType.circle:
-        canvas.drawOval(rect, paint);
-        break;
-      case ShapeType.line:
-        canvas.drawLine(start, end, paint);
-        break;
-      case ShapeType.arrow:
-        canvas.drawLine(start, end, paint);
-        final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
-        final arrowLength = math.max(strokeWidth * 4.0, 12.0);
-        const arrowAngle = math.pi / 6;
-
-        final p1 = Offset(
-          end.dx - arrowLength * math.cos(angle - arrowAngle),
-          end.dy - arrowLength * math.sin(angle - arrowAngle),
-        );
-        final p2 = Offset(
-          end.dx - arrowLength * math.cos(angle + arrowAngle),
-          end.dy - arrowLength * math.sin(angle + arrowAngle),
-        );
-
-        canvas.drawLine(end, p1, paint);
-        canvas.drawLine(end, p2, paint);
-        break;
-    }
+    paintShapeOnCanvas(canvas, type, start, end, paint);
   }
 
   @override

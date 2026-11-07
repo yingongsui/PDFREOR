@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 ///
 /// Unlike standard [Stack], which stops testing siblings once a child reports a hit,
 /// [PassThroughStack] continues testing lower siblings so both overlay canvases
-/// (like [PdfEditorCanvas]) and underlying viewers (like [SfPdfViewer]) receive
+/// (like [PdfEditorCanvas]) and underlying viewers (like [PdfViewer]) receive
 /// pointer events in the gesture arena.
 class PassThroughStack extends Stack {
   const PassThroughStack({

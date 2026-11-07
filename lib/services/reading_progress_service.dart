@@ -19,6 +19,7 @@ class ReadingProgressService {
   static const Duration _saveDebounce = Duration(milliseconds: 350);
 
   final LinkedHashMap<String, int> _pageByPath = LinkedHashMap<String, int>();
+  final LinkedHashMap<String, double> _zoomByPath = LinkedHashMap<String, double>();
   Directory? _storageDirOverride;
   bool _initialized = false;
   bool _dirty = false;
@@ -55,6 +56,19 @@ class ReadingProgressService {
             }
             while (_pageByPath.length > _maxEntries) {
               _pageByPath.remove(_pageByPath.keys.first);
+            }
+          }
+          final rawZooms = decoded['zooms'];
+          if (rawZooms is Map<String, dynamic>) {
+            _zoomByPath.clear();
+            for (final entry in rawZooms.entries) {
+              final zoom = (entry.value as num?)?.toDouble();
+              if (entry.key.isNotEmpty && zoom != null && zoom > 0.05 && zoom < 50.0) {
+                _zoomByPath[entry.key] = zoom;
+              }
+            }
+            while (_zoomByPath.length > _maxEntries) {
+              _zoomByPath.remove(_zoomByPath.keys.first);
             }
           }
         }
@@ -100,6 +114,32 @@ class ReadingProgressService {
     }
   }
 
+  /// Returns the last recorded zoom level for [filePath], or null if unset.
+  double? getLastZoom(String filePath) {
+    if (filePath.isEmpty) return null;
+    return _zoomByPath[filePath];
+  }
+
+  /// Records [zoom] level for [filePath].
+  void saveLastZoom(String filePath, double zoom, {bool immediate = false}) {
+    if (filePath.isEmpty || zoom <= 0.05 || zoom > 50.0) return;
+    final prev = _zoomByPath.remove(filePath);
+    _zoomByPath[filePath] = zoom;
+    while (_zoomByPath.length > _maxEntries) {
+      _zoomByPath.remove(_zoomByPath.keys.first);
+    }
+    if (prev != null && (prev - zoom).abs() < 0.005) {
+      return;
+    }
+
+    _dirty = true;
+    if (immediate) {
+      flush().ignore();
+    } else {
+      _schedulePersist();
+    }
+  }
+
   /// Migrates saved reading progress from [oldPath] to [newPath] on rename or move.
   void renamePath(String oldPath, String newPath) {
     if (oldPath.isEmpty || newPath.isEmpty || oldPath == newPath) return;
@@ -108,6 +148,14 @@ class ReadingProgressService {
       _pageByPath.remove(newPath);
       _pageByPath[newPath] = savedPage;
       _dirty = true;
+    }
+    final savedZoom = _zoomByPath.remove(oldPath);
+    if (savedZoom != null) {
+      _zoomByPath.remove(newPath);
+      _zoomByPath[newPath] = savedZoom;
+      _dirty = true;
+    }
+    if (_dirty) {
       _schedulePersist();
     }
   }
@@ -115,7 +163,10 @@ class ReadingProgressService {
   /// Removes saved reading progress when a file is deleted.
   void removePath(String filePath) {
     if (filePath.isEmpty) return;
-    if (_pageByPath.remove(filePath) != null) {
+    bool changed = false;
+    if (_pageByPath.remove(filePath) != null) changed = true;
+    if (_zoomByPath.remove(filePath) != null) changed = true;
+    if (changed) {
       _dirty = true;
       _schedulePersist();
     }
@@ -135,11 +186,15 @@ class ReadingProgressService {
     if (!_dirty) return _writeQueue;
     _dirty = false;
 
-    final snapshot = Map<String, int>.from(_pageByPath);
+    final pagesSnapshot = Map<String, int>.from(_pageByPath);
+    final zoomsSnapshot = Map<String, double>.from(_zoomByPath);
     _writeQueue = _writeQueue.then((_) async {
       try {
         final file = await _getFile();
-        final payload = jsonEncode({'pages': snapshot});
+        final payload = jsonEncode({
+          'pages': pagesSnapshot,
+          'zooms': zoomsSnapshot,
+        });
         await PdfExportService.atomicWriteString(file, payload);
       } catch (e) {
         debugPrint('Error persisting reading progress: $e');
