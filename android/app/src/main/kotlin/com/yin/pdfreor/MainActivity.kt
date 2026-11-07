@@ -2,6 +2,8 @@ package com.yin.pdfreor
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
@@ -19,8 +21,11 @@ import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     private val STYLUS_CHANNEL = "com.yin.pdfreor/stylus"
@@ -157,7 +162,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                                     if (mime == null || mime.startsWith("image/")) {
                                         val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                                         if (bytes != null && bytes.isNotEmpty()) {
-                                            result.success(bytes)
+                                            result.success(compactClipboardImageBytes(bytes, mime))
                                             return@setMethodCallHandler
                                         }
                                     }
@@ -245,6 +250,96 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                 }
             }
         }
+    }
+
+    private fun compactClipboardImageBytes(bytes: ByteArray, mime: String?): ByteArray {
+        var decoded: Bitmap? = null
+        var scaled: Bitmap? = null
+        try {
+            val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOpts)
+            val origW = boundsOpts.outWidth
+            val origH = boundsOpts.outHeight
+            if (origW <= 0 || origH <= 0) return bytes
+
+            val maxSide = max(origW, origH)
+            if (maxSide <= 2048 && bytes.size <= 120 * 1024) {
+                return bytes
+            }
+
+            var sampleSize = 1
+            while ((maxSide / (sampleSize * 2)) >= 2048) {
+                sampleSize *= 2
+            }
+
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts) ?: return bytes
+
+            val curMax = max(decoded.width, decoded.height)
+            val targetBmp: Bitmap = if (curMax > 2048) {
+                val ratio = 2048.0 / curMax.toDouble()
+                val newW = max(1, (decoded.width * ratio).roundToInt())
+                val newH = max(1, (decoded.height * ratio).roundToInt())
+                val s = Bitmap.createScaledBitmap(decoded, newW, newH, true)
+                if (s !== decoded) {
+                    scaled = s
+                }
+                s
+            } else {
+                decoded
+            }
+
+            val isKnownJpeg = mime.equals("image/jpeg", ignoreCase = true) ||
+                mime.equals("image/jpg", ignoreCase = true)
+            var isFullyOpaque = isKnownJpeg || !targetBmp.hasAlpha()
+
+            if (!isFullyOpaque) {
+                isFullyOpaque = true
+                val rowPixels = IntArray(targetBmp.width)
+                for (y in 0 until targetBmp.height) {
+                    targetBmp.getPixels(rowPixels, 0, targetBmp.width, 0, y, targetBmp.width, 1)
+                    for (px in rowPixels) {
+                        if ((px ushr 24) < 252) {
+                            isFullyOpaque = false
+                            break
+                        }
+                    }
+                    if (!isFullyOpaque) break
+                }
+            }
+
+            val out = ByteArrayOutputStream()
+            if (isFullyOpaque) {
+                if (targetBmp.compress(Bitmap.CompressFormat.JPEG, 86, out)) {
+                    val jpegBytes = out.toByteArray()
+                    if (jpegBytes.isNotEmpty() &&
+                        (maxSide > 2048 || jpegBytes.size < (bytes.size * 85) / 100)
+                    ) {
+                        return if (jpegBytes.size < bytes.size) jpegBytes else bytes
+                    }
+                }
+            } else if (maxSide > 2048) {
+                if (targetBmp.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                    val pngBytes = out.toByteArray()
+                    if (pngBytes.isNotEmpty() && pngBytes.size < bytes.size) {
+                        return pngBytes
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("PdfReorClipboard", "Clipboard image compaction skipped: $e")
+        } finally {
+            try {
+                scaled?.recycle()
+            } catch (_: Exception) {}
+            try {
+                decoded?.recycle()
+            } catch (_: Exception) {}
+        }
+        return bytes
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

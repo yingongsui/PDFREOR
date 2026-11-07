@@ -9,9 +9,13 @@ import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import 'editor_settings_service.dart';
 import 'latex_rasterizer.dart';
+import 'pdf_image_optimizer.dart';
 
 class PdfExportService {
   PdfExportService._();
+
+  static final RegExp _jpKanaRegex = RegExp(r'[\u3040-\u30ff]');
+  static final RegExp _krHangulRegex = RegExp(r'[\uac00-\ud7af]');
 
   static sf.PdfColor _toPdfColor(Color c) {
     return sf.PdfColor(
@@ -20,6 +24,177 @@ class PdfExportService {
       (c.b * 255.0).round().clamp(0, 255),
       (c.a * 255.0).round().clamp(0, 255),
     );
+  }
+
+  /// Quantizes a PDF point coordinate to 0.1 pt (1/720 inch) precision to reduce
+  /// floating-point string bloat and improve Deflate compression of content streams.
+  static double roundPdfCoord(double value) {
+    return (value * 10.0).roundToDouble() / 10.0;
+  }
+
+  static Offset roundPdfOffset(Offset p) {
+    return Offset(roundPdfCoord(p.dx), roundPdfCoord(p.dy));
+  }
+
+  static Rect roundPdfRect(Rect r) {
+    final left = roundPdfCoord(r.left);
+    final top = roundPdfCoord(r.top);
+    final right = roundPdfCoord(r.right);
+    final bottom = roundPdfCoord(r.bottom);
+    return Rect.fromLTRB(left, top, math.max(left, right), math.max(top, bottom));
+  }
+
+  /// Simplifies a polyline in PDF point space using iterative Ramer-Douglas-Peucker (RDP)
+  /// and quantizes surviving vertices to 0.1 pt precision.
+  static List<Offset> simplifyStrokePoints(
+    List<Offset> points, {
+    double epsilon = 0.25,
+  }) {
+    if (points.isEmpty) return const <Offset>[];
+    if (points.length == 1) return <Offset>[roundPdfOffset(points.first)];
+    if (points.length == 2) {
+      final p0 = roundPdfOffset(points.first);
+      final p1 = roundPdfOffset(points.last);
+      return p0 == p1 ? <Offset>[p0] : <Offset>[p0, p1];
+    }
+
+    final int n = points.length;
+    final keep = Uint8List(n);
+    keep[0] = 1;
+    keep[n - 1] = 1;
+
+    final double epsSq = epsilon * epsilon;
+    final List<int> stack = <int>[0, n - 1];
+
+    while (stack.isNotEmpty) {
+      final int endIdx = stack.removeLast();
+      final int startIdx = stack.removeLast();
+      if (endIdx - startIdx <= 1) continue;
+
+      final double ax = points[startIdx].dx;
+      final double ay = points[startIdx].dy;
+      final double bx = points[endIdx].dx;
+      final double by = points[endIdx].dy;
+      final double dx = bx - ax;
+      final double dy = by - ay;
+      final double lenSq = dx * dx + dy * dy;
+
+      double maxDistSq = -1.0;
+      int maxIdx = -1;
+
+      for (int i = startIdx + 1; i < endIdx; i++) {
+        final double px = points[i].dx;
+        final double py = points[i].dy;
+        double distSq;
+        if (lenSq < 1e-9) {
+          final double ex = px - ax;
+          final double ey = py - ay;
+          distSq = ex * ex + ey * ey;
+        } else {
+          final double t = (((px - ax) * dx + (py - ay) * dy) / lenSq).clamp(0.0, 1.0);
+          final double projX = ax + t * dx;
+          final double projY = ay + t * dy;
+          final double ex = px - projX;
+          final double ey = py - projY;
+          distSq = ex * ex + ey * ey;
+        }
+        if (distSq > maxDistSq) {
+          maxDistSq = distSq;
+          maxIdx = i;
+        }
+      }
+
+      if (maxDistSq > epsSq && maxIdx != -1) {
+        keep[maxIdx] = 1;
+        stack.add(startIdx);
+        stack.add(maxIdx);
+        stack.add(maxIdx);
+        stack.add(endIdx);
+      }
+    }
+
+    final List<Offset> result = <Offset>[];
+    Offset? prev;
+    for (int i = 0; i < n; i++) {
+      if (keep[i] == 1) {
+        final q = roundPdfOffset(points[i]);
+        if (prev == null || q != prev) {
+          result.add(q);
+          prev = q;
+        }
+      }
+    }
+    if (result.isEmpty) {
+      result.add(roundPdfOffset(points.first));
+    }
+    return result;
+  }
+
+  /// Merges collinear horizontally adjacent or overlapping selection rectangles
+  /// on the same text line into single span rectangles, reducing draw ops and avoiding
+  /// dark multiply-blend seams between adjacent highlight boxes.
+  static List<Rect> mergeCollinearRects(List<Rect> rects) {
+    final valid = rects.where((r) => r.width > 0 && r.height > 0).toList();
+    if (valid.isEmpty) return const <Rect>[];
+    if (valid.length == 1) return <Rect>[roundPdfRect(valid.first)];
+
+    valid.sort((a, b) => a.center.dy.compareTo(b.center.dy));
+
+    final List<List<Rect>> lineBands = <List<Rect>>[];
+    for (final r in valid) {
+      if (lineBands.isEmpty) {
+        lineBands.add(<Rect>[r]);
+      } else {
+        final currentBand = lineBands.last;
+        final bandRef = currentBand.first;
+        final tolY = math.min(r.height, bandRef.height) * 0.45;
+        if ((r.center.dy - bandRef.center.dy).abs() <= tolY) {
+          currentBand.add(r);
+        } else {
+          lineBands.add(<Rect>[r]);
+        }
+      }
+    }
+
+    final List<Rect> merged = <Rect>[];
+    for (final band in lineBands) {
+      band.sort((a, b) => a.left.compareTo(b.left));
+      Rect acc = band.first;
+      for (int i = 1; i < band.length; i++) {
+        final next = band[i];
+        final maxGap = math.max(2.5, acc.height * 0.35);
+        if (next.left <= acc.right + maxGap) {
+          acc = Rect.fromLTRB(
+            math.min(acc.left, next.left),
+            math.min(acc.top, next.top),
+            math.max(acc.right, next.right),
+            math.max(acc.bottom, next.bottom),
+          );
+        } else {
+          merged.add(roundPdfRect(acc));
+          acc = next;
+        }
+      }
+      merged.add(roundPdfRect(acc));
+    }
+    return merged;
+  }
+
+  /// Counts '%%EOF' markers in [bytes] to detect accumulated incremental PDF revisions.
+  static int _countPdfEofMarkers(Uint8List bytes) {
+    int count = 0;
+    final limit = bytes.length - 4;
+    for (int i = 0; i < limit; i++) {
+      if (bytes[i] == 37 &&
+          bytes[i + 1] == 37 &&
+          bytes[i + 2] == 69 &&
+          bytes[i + 3] == 79 &&
+          bytes[i + 4] == 70) {
+        count++;
+        i += 4;
+      }
+    }
+    return count;
   }
 
   /// Atomically writes [bytes] to [targetFile] via a flushed sibling temporary file
@@ -104,6 +279,14 @@ class PdfExportService {
       final deletedSet = deletedZeroIndexedPages
           .where((idx) => idx >= 0 && idx < origPageCount)
           .toSet();
+
+      // Disable incremental append when pages are deleted (so removed page streams/images
+      // are garbage-collected) or when multiple incremental trailers have accumulated.
+      if (deletedSet.isNotEmpty ||
+          (baseBytes.length <= 25 * 1024 * 1024 && _countPdfEofMarkers(baseBytes) >= 3)) {
+        doc.fileStructure.incrementalUpdate = false;
+      }
+
       final List<int> oldToNewPageIdx = List<int>.filled(origPageCount, -1);
       int nextNewIdx = 0;
       for (int i = 0; i < origPageCount; i++) {
@@ -139,7 +322,24 @@ class PdfExportService {
         return origPageBounds.length - 1;
       }
 
-      // 5. Render text annotations (highlights, underlines, strikethroughs)
+      // 5. Render text annotations with collinear rect merging & shared highlight ExtGState
+      int activeHighlightPageIdx = -1;
+      int activeHighlightColorArgb = 0;
+      sf.PdfPath? activeHighlightPath;
+
+      void flushHighlightBatch({bool closePageTransparency = true}) {
+        if (activeHighlightPageIdx >= 0 && activeHighlightPath != null) {
+          final hPage = doc.pages[activeHighlightPageIdx];
+          final brush = sf.PdfSolidBrush(_toPdfColor(Color(activeHighlightColorArgb)));
+          hPage.graphics.drawPath(activeHighlightPath!, brush: brush);
+          activeHighlightPath = null;
+        }
+        if (closePageTransparency && activeHighlightPageIdx >= 0) {
+          doc.pages[activeHighlightPageIdx].graphics.restore();
+          activeHighlightPageIdx = -1;
+        }
+      }
+
       for (final ta in drawingController.textAnnotations) {
         final origIdx = ta.pageNumber - 1;
         if (origIdx < 0 || origIdx >= origPageCount) continue;
@@ -151,44 +351,85 @@ class PdfExportService {
         final scaleX = page.size.width / bounds.width;
         final scaleY = page.size.height / bounds.height;
 
-        if (ta.type == TextAnnotationType.highlight) {
-          page.graphics.save();
-          page.graphics.setTransparency(0.35, mode: sf.PdfBlendMode.multiply);
-          final brush = sf.PdfSolidBrush(_toPdfColor(ta.color));
-          for (final r in ta.rects) {
-            final pdfRect = Rect.fromLTWH(
+        final scaledRects = <Rect>[
+          for (final r in ta.rects)
+            Rect.fromLTWH(
               (r.left - bounds.left) * scaleX,
               (r.top - bounds.top) * scaleY,
               r.width * scaleX,
               r.height * scaleY,
-            );
-            page.graphics.drawRectangle(bounds: pdfRect, brush: brush);
+            ),
+        ];
+        final mergedRects = mergeCollinearRects(scaledRects);
+        if (mergedRects.isEmpty) continue;
+
+        if (ta.type == TextAnnotationType.highlight) {
+          final colorArgb = ta.color.toARGB32();
+          if (activeHighlightPageIdx != newIdx) {
+            flushHighlightBatch(closePageTransparency: true);
+            page.graphics.save();
+            page.graphics.setTransparency(0.35, mode: sf.PdfBlendMode.multiply);
+            activeHighlightPageIdx = newIdx;
+            activeHighlightColorArgb = colorArgb;
+            activeHighlightPath = sf.PdfPath();
+          } else if (activeHighlightColorArgb != colorArgb || activeHighlightPath == null) {
+            flushHighlightBatch(closePageTransparency: false);
+            activeHighlightColorArgb = colorArgb;
+            activeHighlightPath = sf.PdfPath();
           }
-          page.graphics.restore();
-        } else if (ta.type == TextAnnotationType.underline) {
-          final pen = sf.PdfPen(_toPdfColor(ta.color), width: 1.5 * scaleX);
-          for (final r in ta.rects) {
-            final y = (r.bottom - bounds.top) * scaleY;
-            page.graphics.drawLine(
-              pen,
-              Offset((r.left - bounds.left) * scaleX, y),
-              Offset((r.right - bounds.left) * scaleX, y),
-            );
+          for (final pdfRect in mergedRects) {
+            activeHighlightPath!.addRectangle(pdfRect);
           }
-        } else if (ta.type == TextAnnotationType.strikethrough) {
-          final pen = sf.PdfPen(_toPdfColor(ta.color), width: 1.5 * scaleX);
-          for (final r in ta.rects) {
-            final y = (r.center.dy - bounds.top) * scaleY;
-            page.graphics.drawLine(
-              pen,
-              Offset((r.left - bounds.left) * scaleX, y),
-              Offset((r.right - bounds.left) * scaleX, y),
+        } else {
+          flushHighlightBatch(closePageTransparency: true);
+          final pen = sf.PdfPen(
+            _toPdfColor(ta.color),
+            width: math.max(0.5, roundPdfCoord(1.5 * scaleX)),
+          );
+          final linePoints = <Offset>[];
+          final lineTypes = <int>[];
+          for (final pdfRect in mergedRects) {
+            final y = roundPdfCoord(
+              ta.type == TextAnnotationType.underline ? pdfRect.bottom : pdfRect.center.dy,
+            );
+            linePoints.add(Offset(pdfRect.left, y));
+            linePoints.add(Offset(pdfRect.right, y));
+            lineTypes.add(0);
+            lineTypes.add(1);
+          }
+          if (linePoints.isNotEmpty) {
+            page.graphics.drawPath(
+              sf.PdfPath(points: linePoints, pathTypes: lineTypes),
+              pen: pen,
             );
           }
         }
       }
+      flushHighlightBatch(closePageTransparency: true);
 
-      // 6. Draw strokes efficiently using connected path and point deduplication
+      // 6. Draw strokes using RDP simplification and contiguous same-style PdfPath batching
+      int strokeBatchPageIdx = -1;
+      int strokeBatchColorArgb = 0;
+      int strokeBatchWidthTenths = 0;
+      List<Offset> strokeBatchPoints = <Offset>[];
+      List<int> strokeBatchTypes = <int>[];
+
+      void flushStrokeBatch() {
+        if (strokeBatchPageIdx < 0 || strokeBatchPoints.isEmpty) return;
+        final bPage = doc.pages[strokeBatchPageIdx];
+        final pen = sf.PdfPen(
+          _toPdfColor(Color(strokeBatchColorArgb)),
+          width: strokeBatchWidthTenths / 10.0,
+        )
+          ..lineCap = sf.PdfLineCap.round
+          ..lineJoin = sf.PdfLineJoin.round;
+        final path = sf.PdfPath(points: strokeBatchPoints, pathTypes: strokeBatchTypes);
+        bPage.graphics.drawPath(path, pen: pen);
+        strokeBatchPoints = <Offset>[];
+        strokeBatchTypes = <int>[];
+        strokeBatchPageIdx = -1;
+      }
+
       for (final stroke in drawingController.strokes) {
         if (stroke.points.isEmpty) continue;
         final origIdx = findOrigPageIndex(stroke.points.first.offset.dy);
@@ -202,54 +443,76 @@ class PdfExportService {
         final scaleY = page.size.height / bounds.height;
 
         if (stroke.points.length == 1) {
-          final pt = Offset(
+          flushStrokeBatch();
+          final pt = roundPdfOffset(Offset(
             (stroke.points.first.offset.dx - bounds.left) * scaleX,
             (stroke.points.first.offset.dy - bounds.top) * scaleY,
+          ));
+          final r = math.max(
+            0.5,
+            roundPdfCoord((stroke.strokeWidth * stroke.points.first.pressure / 2.0) * scaleX),
           );
-          final r = math.max(0.5, (stroke.strokeWidth * stroke.points.first.pressure / 2.0) * scaleX);
           final brush = sf.PdfSolidBrush(_toPdfColor(stroke.color));
           page.graphics.drawEllipse(Rect.fromCircle(center: pt, radius: r), brush: brush);
-        } else {
-          final List<Offset> docPoints = [];
-          Offset? lastPt;
-          for (final p in stroke.points) {
-            final pt = Offset(
-              (p.offset.dx - bounds.left) * scaleX,
-              (p.offset.dy - bounds.top) * scaleY,
-            );
-            if (lastPt == null || (pt - lastPt).distanceSquared > 0.25) {
-              docPoints.add(pt);
-              lastPt = pt;
-            }
-          }
-          if (docPoints.length < 2) {
-            if (docPoints.isNotEmpty) {
-              final r = math.max(0.5, (stroke.strokeWidth / 2.0) * scaleX);
-              final brush = sf.PdfSolidBrush(_toPdfColor(stroke.color));
-              page.graphics.drawEllipse(
-                Rect.fromCircle(center: docPoints.first, radius: r),
-                brush: brush,
-              );
-            }
-            continue;
-          }
+          continue;
+        }
 
-          final pen = sf.PdfPen(
-            _toPdfColor(stroke.color),
-            width: math.max(0.5, stroke.strokeWidth * scaleX),
+        final List<Offset> preFiltered = <Offset>[];
+        Offset? lastPt;
+        for (final p in stroke.points) {
+          final pt = Offset(
+            (p.offset.dx - bounds.left) * scaleX,
+            (p.offset.dy - bounds.top) * scaleY,
           );
-          pen.lineCap = sf.PdfLineCap.round;
-          pen.lineJoin = sf.PdfLineJoin.round;
-
-          final path = sf.PdfPath();
-          for (int i = 0; i < docPoints.length - 1; i++) {
-            path.addLine(docPoints[i], docPoints[i + 1]);
+          if (lastPt == null || (pt - lastPt).distanceSquared > 0.09) {
+            preFiltered.add(pt);
+            lastPt = pt;
           }
-          page.graphics.drawPath(path, pen: pen);
+        }
+        // Always preserve exact stroke endpoint before RDP
+        final rawLast = Offset(
+          (stroke.points.last.offset.dx - bounds.left) * scaleX,
+          (stroke.points.last.offset.dy - bounds.top) * scaleY,
+        );
+        if (preFiltered.isEmpty || (rawLast - preFiltered.last).distanceSquared > 1e-4) {
+          preFiltered.add(rawLast);
+        }
+
+        final docPoints = simplifyStrokePoints(preFiltered, epsilon: 0.25);
+        if (docPoints.length < 2) {
+          if (docPoints.isNotEmpty) {
+            flushStrokeBatch();
+            final r = math.max(0.5, roundPdfCoord((stroke.strokeWidth / 2.0) * scaleX));
+            final brush = sf.PdfSolidBrush(_toPdfColor(stroke.color));
+            page.graphics.drawEllipse(
+              Rect.fromCircle(center: docPoints.first, radius: r),
+              brush: brush,
+            );
+          }
+          continue;
+        }
+
+        final colorArgb = stroke.color.toARGB32();
+        final widthTenths = math.max(5, (stroke.strokeWidth * scaleX * 10.0).round());
+
+        if (strokeBatchPageIdx != newIdx ||
+            strokeBatchColorArgb != colorArgb ||
+            strokeBatchWidthTenths != widthTenths) {
+          flushStrokeBatch();
+          strokeBatchPageIdx = newIdx;
+          strokeBatchColorArgb = colorArgb;
+          strokeBatchWidthTenths = widthTenths;
+        }
+
+        strokeBatchPoints.addAll(docPoints);
+        strokeBatchTypes.add(0);
+        for (int i = 1; i < docPoints.length; i++) {
+          strokeBatchTypes.add(1);
         }
       }
+      flushStrokeBatch();
 
-      // 7. Draw geometric shapes
+      // 7. Draw geometric shapes with quantized coordinates
       for (final shape in drawingController.shapes) {
         final origIdx = findOrigPageIndex(shape.start.dy);
         if (origIdx < 0 || origIdx >= origPageCount) continue;
@@ -261,17 +524,17 @@ class PdfExportService {
         final scaleX = page.size.width / bounds.width;
         final scaleY = page.size.height / bounds.height;
 
-        final start = Offset(
+        final start = roundPdfOffset(Offset(
           (shape.start.dx - bounds.left) * scaleX,
           (shape.start.dy - bounds.top) * scaleY,
-        );
-        final end = Offset(
+        ));
+        final end = roundPdfOffset(Offset(
           (shape.end.dx - bounds.left) * scaleX,
           (shape.end.dy - bounds.top) * scaleY,
-        );
+        ));
         final pen = sf.PdfPen(
           _toPdfColor(shape.color),
-          width: shape.strokeWidth * scaleX,
+          width: math.max(0.5, roundPdfCoord(shape.strokeWidth * scaleX)),
         );
 
         switch (shape.type) {
@@ -285,27 +548,34 @@ class PdfExportService {
             page.graphics.drawLine(pen, start, end);
             break;
           case ShapeType.arrow:
-            page.graphics.drawLine(pen, start, end);
             final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
             final arrowLength = math.max(shape.strokeWidth * 4.0 * scaleX, 12.0);
             const arrowAngle = math.pi / 6;
 
-            final p1 = Offset(
+            final p1 = roundPdfOffset(Offset(
               end.dx - arrowLength * math.cos(angle - arrowAngle),
               end.dy - arrowLength * math.sin(angle - arrowAngle),
-            );
-            final p2 = Offset(
+            ));
+            final p2 = roundPdfOffset(Offset(
               end.dx - arrowLength * math.cos(angle + arrowAngle),
               end.dy - arrowLength * math.sin(angle + arrowAngle),
-            );
+            ));
 
-            page.graphics.drawLine(pen, end, p1);
-            page.graphics.drawLine(pen, end, p2);
+            final arrowPath = sf.PdfPath(
+              points: <Offset>[start, end, p1, end, p2],
+              pathTypes: const <int>[0, 1, 0, 1, 1],
+            );
+            page.graphics.drawPath(arrowPath, pen: pen);
             break;
         }
       }
 
-      // 8. Draw text boxes (native vector text with auto-wrapping, fallback to raster for emojis)
+      // 8. Draw text boxes (cached PdfFont dictionaries, deduplicated LaTeX & fallback bitmaps)
+      final Map<String, sf.PdfFont> fontCache = {};
+      final Map<String, ({sf.PdfBitmap? bitmap, Offset offset, Size size})> latexBitmapCache = {};
+      final Map<String, ({sf.PdfBitmap? bitmap, Offset offset, Size size})> fallbackBitmapCache = {};
+      final wordWrapFormat = sf.PdfStringFormat(wordWrap: sf.PdfWordWrapType.word);
+
       for (final tb in drawingController.textBoxes) {
         if (tb.text.trim().isEmpty) continue;
         final origIdx = findOrigPageIndex(tb.position.dy);
@@ -318,79 +588,97 @@ class PdfExportService {
         final scaleX = page.size.width / bounds.width;
         final scaleY = page.size.height / bounds.height;
 
-        final pos = Offset(
+        final pos = roundPdfOffset(Offset(
           ((tb.position.dx - bounds.left) + 4) * scaleX,
           (tb.position.dy + 2 - bounds.top) * scaleY,
-        );
+        ));
 
         if (tb.isLatex) {
-          Uint8List? imageBytes = tb.renderedImageBytes;
-          Size? imageSize = tb.renderedSize;
-          if (imageBytes == null) {
+          final targetRatio = LatexRasterizer.computeTargetPixelRatio(scaleX);
+          final cacheKey =
+              '${tb.fontSize.toStringAsFixed(2)}|${tb.color.toARGB32()}|${targetRatio.toStringAsFixed(2)}|${tb.text}';
+          var cached = latexBitmapCache[cacheKey];
+          if (cached == null) {
             final res = await LatexRasterizer.rasterize(
               latex: tb.text,
               fontSize: tb.fontSize,
               color: tb.color,
+              pixelRatio: targetRatio,
             );
-            imageBytes = res?.bytes;
-            imageSize = res?.size;
+            if (res != null && res.bytes.isNotEmpty) {
+              cached = (
+                bitmap: sf.PdfBitmap(res.bytes),
+                offset: res.offset,
+                size: res.size,
+              );
+            } else {
+              cached = (bitmap: null, offset: Offset.zero, size: Size.zero);
+            }
+            latexBitmapCache[cacheKey] = cached;
           }
-          if (imageBytes != null && imageBytes.isNotEmpty) {
-            final pdfImage = sf.PdfBitmap(imageBytes);
-            final renderW = (imageSize?.width ?? (tb.width ?? 140.0)) * scaleX;
-            final renderH = (imageSize?.height ?? (tb.fontSize * 1.8)) * scaleY;
+
+          final pdfImage = cached.bitmap;
+          if (pdfImage != null) {
             page.graphics.drawImage(
               pdfImage,
-              Rect.fromLTWH(pos.dx, pos.dy, renderW, renderH),
+              Rect.fromLTWH(
+                roundPdfCoord(pos.dx + cached.offset.dx * scaleX),
+                roundPdfCoord(pos.dy + cached.offset.dy * scaleY),
+                roundPdfCoord(cached.size.width * scaleX),
+                roundPdfCoord(cached.size.height * scaleY),
+              ),
             );
           }
           continue;
         }
 
-        final tbWidth = (tb.width ?? 220.0) * scaleX;
+        final tbWidth = roundPdfCoord((tb.width ?? 220.0) * scaleX);
+        final pdfFontSize = (tb.fontSize * scaleX * 20.0).round() / 20.0;
 
         final isPureAscii = tb.text.codeUnits.every(
           (c) => (c >= 32 && c < 127) || c == 10 || c == 13 || c == 9,
         );
 
-        sf.PdfFont font;
+        String fontCategory;
         if (isPureAscii) {
-          switch (textBoxFont) {
-            case AppFontFamily.sansSerif:
-              font = sf.PdfStandardFont(sf.PdfFontFamily.helvetica, tb.fontSize * scaleX);
-              break;
-            case AppFontFamily.serif:
-              font = sf.PdfStandardFont(sf.PdfFontFamily.timesRoman, tb.fontSize * scaleX);
-              break;
-            case AppFontFamily.monospace:
-              font = sf.PdfStandardFont(sf.PdfFontFamily.courier, tb.fontSize * scaleX);
-              break;
-          }
-        } else if (RegExp(r'[\u3040-\u30ff]').hasMatch(tb.text)) {
-          font = sf.PdfCjkStandardFont(
-            textBoxFont == AppFontFamily.serif
-                ? sf.PdfCjkFontFamily.heiseiMinchoW3
-                : sf.PdfCjkFontFamily.heiseiKakuGothicW5,
-            tb.fontSize * scaleX,
-          );
-        } else if (RegExp(r'[\uac00-\ud7af]').hasMatch(tb.text)) {
-          font = sf.PdfCjkStandardFont(
-            textBoxFont == AppFontFamily.serif
-                ? sf.PdfCjkFontFamily.hanyangSystemsShinMyeongJoMedium
-                : sf.PdfCjkFontFamily.hanyangSystemsGothicMedium,
-            tb.fontSize * scaleX,
-          );
+          fontCategory = 'ascii_${textBoxFont.name}';
+        } else if (_jpKanaRegex.hasMatch(tb.text)) {
+          fontCategory = textBoxFont == AppFontFamily.serif ? 'jp_serif' : 'jp_sans';
+        } else if (_krHangulRegex.hasMatch(tb.text)) {
+          fontCategory = textBoxFont == AppFontFamily.serif ? 'kr_serif' : 'kr_sans';
         } else {
-          font = sf.PdfCjkStandardFont(
-            sf.PdfCjkFontFamily.sinoTypeSongLight,
-            tb.fontSize * scaleX,
-          );
+          fontCategory = 'cjk_song';
         }
 
+        final fontKey = '$fontCategory|${pdfFontSize.toStringAsFixed(2)}';
+        final font = fontCache.putIfAbsent(fontKey, () {
+          switch (fontCategory) {
+            case 'ascii_sansSerif':
+              return sf.PdfStandardFont(sf.PdfFontFamily.helvetica, pdfFontSize);
+            case 'ascii_serif':
+              return sf.PdfStandardFont(sf.PdfFontFamily.timesRoman, pdfFontSize);
+            case 'ascii_monospace':
+              return sf.PdfStandardFont(sf.PdfFontFamily.courier, pdfFontSize);
+            case 'jp_serif':
+              return sf.PdfCjkStandardFont(sf.PdfCjkFontFamily.heiseiMinchoW3, pdfFontSize);
+            case 'jp_sans':
+              return sf.PdfCjkStandardFont(sf.PdfCjkFontFamily.heiseiKakuGothicW5, pdfFontSize);
+            case 'kr_serif':
+              return sf.PdfCjkStandardFont(
+                sf.PdfCjkFontFamily.hanyangSystemsShinMyeongJoMedium,
+                pdfFontSize,
+              );
+            case 'kr_sans':
+              return sf.PdfCjkStandardFont(
+                sf.PdfCjkFontFamily.hanyangSystemsGothicMedium,
+                pdfFontSize,
+              );
+            default:
+              return sf.PdfCjkStandardFont(sf.PdfCjkFontFamily.sinoTypeSongLight, pdfFontSize);
+          }
+        });
+
         final brush = sf.PdfSolidBrush(_toPdfColor(tb.color));
-        final format = sf.PdfStringFormat(
-          wordWrap: sf.PdfWordWrapType.word,
-        );
 
         try {
           page.graphics.drawString(
@@ -400,68 +688,92 @@ class PdfExportService {
               pos.dx,
               pos.dy,
               tbWidth,
-              1000 * scaleY,
+              roundPdfCoord(1000 * scaleY),
             ),
             brush: brush,
-            format: format,
+            format: wordWrapFormat,
           );
         } catch (_) {
-          const renderScale = 2.0;
-          final textPainter = TextPainter(
-            text: TextSpan(
-              text: tb.text,
-              style: TextStyle(
-                color: tb.color,
-                fontSize: tb.fontSize * scaleX * renderScale,
-                fontWeight: FontWeight.w500,
-                height: 1.3,
+          final fallbackKey =
+              '${pdfFontSize.toStringAsFixed(2)}|${tb.color.toARGB32()}|${tbWidth.toStringAsFixed(1)}|${tb.text}';
+          var cachedFallback = fallbackBitmapCache[fallbackKey];
+          if (cachedFallback == null) {
+            const renderScale = 2.0;
+            final textPainter = TextPainter(
+              text: TextSpan(
+                text: tb.text,
+                style: TextStyle(
+                  color: tb.color,
+                  fontSize: pdfFontSize * renderScale,
+                  fontWeight: FontWeight.w500,
+                  height: 1.3,
+                ),
               ),
-            ),
-            textDirection: TextDirection.ltr,
-          );
-          ByteData? byteData;
-          int pWidth = 1;
-          int pHeight = 1;
-          try {
-            textPainter.layout(maxWidth: tbWidth * renderScale);
-
-            pWidth = math.max(1, textPainter.width.ceil());
-            pHeight = math.max(1, textPainter.height.ceil());
-
-            final recorder = ui.PictureRecorder();
-            final canvas = Canvas(recorder);
-            textPainter.paint(canvas, Offset.zero);
-
-            final picture = recorder.endRecording();
-            ui.Image? img;
+              textDirection: TextDirection.ltr,
+            );
+            OptimizedPngResult? optPng;
             try {
-              img = await picture.toImage(pWidth, pHeight);
-              byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+              textPainter.layout(maxWidth: tbWidth * renderScale);
+              final pWidth = math.max(1, textPainter.width.ceil());
+              final pHeight = math.max(1, textPainter.height.ceil());
+
+              final recorder = ui.PictureRecorder();
+              final canvas = Canvas(recorder);
+              textPainter.paint(canvas, Offset.zero);
+
+              final picture = recorder.endRecording();
+              ui.Image? img;
+              try {
+                img = await picture.toImage(pWidth, pHeight);
+                final rawData = await img.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+                if (rawData != null) {
+                  optPng = PdfImageOptimizer.encodeOptimizedPngFromRgba(
+                    rawStraightRgba: rawData.buffer.asUint8List(
+                      rawData.offsetInBytes,
+                      rawData.lengthInBytes,
+                    ),
+                    width: pWidth,
+                    height: pHeight,
+                    logicalSize: Size(pWidth / renderScale, pHeight / renderScale),
+                    cropTransparentMargins: true,
+                  );
+                }
+              } finally {
+                img?.dispose();
+                picture.dispose();
+              }
             } finally {
-              img?.dispose();
-              picture.dispose();
+              textPainter.dispose();
             }
-          } finally {
-            textPainter.dispose();
+
+            if (optPng != null && optPng.bytes.isNotEmpty) {
+              cachedFallback = (
+                bitmap: sf.PdfBitmap(optPng.bytes),
+                offset: optPng.offset,
+                size: optPng.size,
+              );
+            } else {
+              cachedFallback = (bitmap: null, offset: Offset.zero, size: Size.zero);
+            }
+            fallbackBitmapCache[fallbackKey] = cachedFallback;
           }
 
-          if (byteData != null) {
-            final pngBytes = byteData.buffer.asUint8List();
-            final bmp = sf.PdfBitmap(pngBytes);
+          if (cachedFallback.bitmap != null) {
             page.graphics.drawImage(
-              bmp,
+              cachedFallback.bitmap!,
               Rect.fromLTWH(
-                pos.dx,
-                pos.dy,
-                pWidth / renderScale,
-                pHeight / renderScale,
+                roundPdfCoord(pos.dx + cachedFallback.offset.dx),
+                roundPdfCoord(pos.dy + cachedFallback.offset.dy),
+                roundPdfCoord(cachedFallback.size.width),
+                roundPdfCoord(cachedFallback.size.height),
               ),
             );
           }
         }
       }
 
-      // 9. Draw pasted images
+      // 9. Draw pasted images (DPI-downsampled, opaque-alpha-stripped, and content-deduplicated)
+      final Map<String, sf.PdfBitmap> pastedImageCache = {};
       for (final img in drawingController.images) {
         final origIdx = findOrigPageIndex(img.position.dy);
         if (origIdx < 0 || origIdx >= origPageCount) continue;
@@ -473,18 +785,35 @@ class PdfExportService {
         final scaleX = page.size.width / bounds.width;
         final scaleY = page.size.height / bounds.height;
 
-        final pos = Offset(
+        final pos = roundPdfOffset(Offset(
           (img.position.dx - bounds.left) * scaleX,
           (img.position.dy - bounds.top) * scaleY,
-        );
-        final bmp = sf.PdfBitmap(img.imageBytes);
+        ));
+        final pdfW = roundPdfCoord(img.width * scaleX);
+        final pdfH = roundPdfCoord(img.height * scaleY);
+        final bucketW = (pdfW / 16.0).ceil() * 16;
+        final bucketH = (pdfH / 16.0).ceil() * 16;
+        final imgCacheKey =
+            '${PdfImageOptimizer.computeContentKey(img.imageBytes)}|${bucketW}x$bucketH';
+
+        var bmp = pastedImageCache[imgCacheKey];
+        if (bmp == null) {
+          final optimizedBytes = await PdfImageOptimizer.optimizeForPdf(
+            img.imageBytes,
+            targetPdfWidthPt: pdfW,
+            targetPdfHeightPt: pdfH,
+          );
+          bmp = sf.PdfBitmap(optimizedBytes);
+          pastedImageCache[imgCacheKey] = bmp;
+        }
+
         page.graphics.drawImage(
           bmp,
-          Rect.fromLTWH(pos.dx, pos.dy, img.width * scaleX, img.height * scaleY),
+          Rect.fromLTWH(pos.dx, pos.dy, pdfW, pdfH),
         );
       }
 
-      return Uint8List.fromList(doc.saveSync());
+      return doc.saveAsBytesSync();
     } finally {
       doc.dispose();
     }
@@ -514,4 +843,3 @@ class PdfExportService {
     return finalBytes;
   }
 }
-

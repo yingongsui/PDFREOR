@@ -206,8 +206,6 @@ class DrawnTextBox {
   final int pageNumber;
   double? width;
   final bool isLatex;
-  Uint8List? renderedImageBytes;
-  Size? renderedSize;
 
   DrawnTextBox({
     required this.id,
@@ -218,8 +216,6 @@ class DrawnTextBox {
     required this.pageNumber,
     this.width,
     this.isLatex = false,
-    this.renderedImageBytes,
-    this.renderedSize,
   });
 }
 

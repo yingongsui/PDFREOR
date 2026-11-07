@@ -1,7 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
@@ -591,7 +589,6 @@ class TextBoxCanvasItem extends StatefulWidget {
 }
 
 class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
-  final GlobalKey _repaintKey = GlobalKey();
   late Offset _position;
   late TextEditingController _textController;
   late FocusNode _focusNode;
@@ -601,36 +598,9 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
 
   Offset? _dragOrigPosition;
   double? _dragOrigWidth;
-  String? _lastCapturedText;
-  double? _lastCapturedFontSize;
-  Color? _lastCapturedColor;
-  double? _lastCapturedWidth;
 
   double get _currentScale =>
       (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
-
-  Future<void> _captureRenderedLatex() async {
-    if (!widget.textBox.isLatex || !mounted) return;
-    try {
-      final boundary = _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null || !boundary.hasSize) return;
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      try {
-        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        final bytes = byteData?.buffer.asUint8List();
-        if (bytes != null && mounted) {
-          widget.textBox.renderedImageBytes = bytes;
-          widget.textBox.renderedSize = boundary.size;
-          _lastCapturedText = widget.textBox.text;
-          _lastCapturedFontSize = widget.textBox.fontSize;
-          _lastCapturedColor = widget.textBox.color;
-          _lastCapturedWidth = _width;
-        }
-      } finally {
-        image.dispose();
-      }
-    } catch (_) {}
-  }
 
   @override
   void initState() {
@@ -640,9 +610,6 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
     _width = widget.textBox.width ?? (widget.textBox.isLatex ? 250.0 : 220.0);
     _textController = TextEditingController(text: widget.textBox.text);
     _focusNode = FocusNode();
-    if (widget.textBox.isLatex) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
-    }
   }
 
   void _insertOperator(String op) {
@@ -687,9 +654,6 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
       widget.onUpdate(text, _position, _fontSize, _width);
       _focusNode.unfocus();
       widget.onFinishEditing();
-      if (widget.textBox.isLatex) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
-      }
     }
   }
 
@@ -712,17 +676,6 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
         widget.textBox.fontSize = _fontSize;
         widget.textBox.position = _position;
         widget.textBox.width = _width;
-      }
-    }
-    if (widget.textBox.isLatex && !widget.isEditing) {
-      final needsRecapture = (oldWidget.isEditing && !widget.isEditing) ||
-          widget.textBox.renderedImageBytes == null ||
-          _lastCapturedText != widget.textBox.text ||
-          _lastCapturedFontSize != widget.textBox.fontSize ||
-          _lastCapturedColor != widget.textBox.color ||
-          _lastCapturedWidth != _width;
-      if (needsRecapture) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _captureRenderedLatex());
       }
     }
     if (!oldWidget.isEditing && widget.isEditing) {
@@ -1017,21 +970,18 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           physics: const NeverScrollableScrollPhysics(),
-          child: RepaintBoundary(
-            key: _repaintKey,
-            child: Math.tex(
+          child: Math.tex(
+            widget.textBox.text,
+            textStyle: TextStyle(
+              color: widget.textBox.color,
+              fontSize: widget.textBox.fontSize,
+            ),
+            mathStyle: MathStyle.display,
+            onErrorFallback: (err) => Text(
               widget.textBox.text,
-              textStyle: TextStyle(
+              style: TextStyle(
                 color: widget.textBox.color,
                 fontSize: widget.textBox.fontSize,
-              ),
-              mathStyle: MathStyle.display,
-              onErrorFallback: (err) => Text(
-                widget.textBox.text,
-                style: TextStyle(
-                  color: widget.textBox.color,
-                  fontSize: widget.textBox.fontSize,
-                ),
               ),
             ),
           ),
