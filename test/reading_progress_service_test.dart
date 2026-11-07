@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdfreor/screens/pdf_viewer_screen.dart';
 import 'package:pdfreor/services/reading_progress_service.dart';
 
 void main() {
@@ -59,6 +61,42 @@ void main() {
       service.removePath('/storage/temp.pdf');
       expect(service.getLastPage('/storage/temp.pdf'), 1);
       await service.flush();
+    });
+
+    test('computeInitialViewportTarget fits current page width on first open and restores savedZoom directly', () {
+      // Narrow cover page (width 400 centered at x=200..600 inside an 800pt max-width document)
+      const narrowCoverLayout = Rect.fromLTWH(200, 0, 400, 600);
+
+      // First open (savedZoom == null): aligns to current page width (800 / 400 = 2.0)
+      final firstOpen = PdfTabContentState.computeInitialViewportTarget(
+        pageLayout: narrowCoverLayout,
+        viewWidth: 800,
+        savedZoom: null,
+      );
+      expect(firstOpen.zoom, closeTo(2.0, 1e-6));
+      expect(firstOpen.documentOffset.dx, closeTo(200.0, 1e-6));
+      expect(firstOpen.documentOffset.dy, closeTo(0.0, 1e-6));
+
+      // Reopen with savedZoom = 1.0: immediately uses savedZoom centered horizontally
+      final savedOpen = PdfTabContentState.computeInitialViewportTarget(
+        pageLayout: narrowCoverLayout,
+        viewWidth: 800,
+        savedZoom: 1.0,
+      );
+      expect(savedOpen.zoom, closeTo(1.0, 1e-6));
+      expect(savedOpen.documentOffset.dx, closeTo(0.0, 1e-6));
+      expect(savedOpen.documentOffset.dy, closeTo(0.0, 1e-6));
+
+      // Body page (width 600 centered at x=300..900 inside a 1200pt wide-cover document)
+      const bodyPageLayout = Rect.fromLTWH(300, 808, 600, 800);
+      final bodySavedOpen = PdfTabContentState.computeInitialViewportTarget(
+        pageLayout: bodyPageLayout,
+        viewWidth: 900,
+        savedZoom: 1.5,
+      );
+      expect(bodySavedOpen.zoom, closeTo(1.5, 1e-6));
+      expect(bodySavedOpen.documentOffset.dx, closeTo(300.0, 1e-6));
+      expect(bodySavedOpen.documentOffset.dy, closeTo(808.0, 1e-6));
     });
   });
 }

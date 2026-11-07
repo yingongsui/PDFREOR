@@ -615,6 +615,32 @@ class PdfTabContentState extends State<PdfTabContent> {
     );
   }
 
+  /// Computes the initial top-left document offset and zoom level so the viewer
+  /// opens immediately at [savedZoom] (if present) or fits [pageLayout]'s width,
+  /// horizontally centered on [pageLayout].
+  @visibleForTesting
+  static ({Offset documentOffset, double zoom}) computeInitialViewportTarget({
+    required Rect pageLayout,
+    required double viewWidth,
+    required double? savedZoom,
+    double minScale = 0.2,
+    double maxScale = 8.0,
+  }) {
+    final double targetZoom;
+    if (savedZoom != null && savedZoom >= minScale) {
+      targetZoom = savedZoom.clamp(minScale, maxScale);
+    } else {
+      final rawFitPageWidth = pageLayout.width > 0 ? viewWidth / pageLayout.width : 1.0;
+      targetZoom = rawFitPageWidth.clamp(minScale, maxScale);
+    }
+    final viewportDocWidth = viewWidth / targetZoom;
+    final dx = pageLayout.center.dx - viewportDocWidth / 2.0;
+    return (
+      documentOffset: Offset(dx, pageLayout.top),
+      zoom: targetZoom,
+    );
+  }
+
   static Widget _suppressBuiltInContextMenu(
     BuildContext context,
     pdfrx.PdfViewerContextMenuBuilderParams params,
@@ -669,6 +695,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   void _rebuildDocumentRef() {
     _documentRef = pdfrx.PdfDocumentRefFile(
       _pdfFile.path,
+      useProgressiveLoading: false,
       key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
     );
   }
@@ -964,7 +991,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     _syncTransformationMatrix();
     if (_isDocumentLoaded) {
       final zoom = _pdfViewerController.currentZoom;
-      if (zoom > 0.2 && (zoom - _lastReportedZoom).abs() >= 0.005) {
+      if (zoom >= 0.2 && (zoom - _lastReportedZoom).abs() >= 0.005) {
         _lastReportedZoom = zoom;
         ReadingProgressService.instance.saveLastZoom(widget.file.path, zoom);
       }
@@ -1126,12 +1153,43 @@ class PdfTabContentState extends State<PdfTabContent> {
   ) {
     _loadingWatchdogTimer?.cancel();
     final totalPages = document.pages.length;
-    _syncDocumentLayoutFromController();
     if (!mounted) return;
 
     final wasAlreadyLoaded = _isDocumentLoaded;
     final baseDesired = wasAlreadyLoaded ? _currentPage : _initialPageNumber;
     final int targetPage = baseDesired.clamp(1, math.max(1, totalPages)).toInt();
+
+    final persistedZoom = ReadingProgressService.instance.getLastZoom(widget.file.path);
+    final effectiveSavedZoom = persistedZoom ??
+        (wasAlreadyLoaded && _lastReportedZoom >= controller.minScale ? _lastReportedZoom : null);
+    final layout = controller.layout;
+    final viewWidth = controller.viewSize.width > 0
+        ? controller.viewSize.width
+        : (_canvasSize.width > 0 ? _canvasSize.width : 0.0);
+
+    if (totalPages > 0 && targetPage >= 1 && targetPage <= layout.pageLayouts.length && viewWidth > 0) {
+      final target = computeInitialViewportTarget(
+        pageLayout: layout.pageLayouts[targetPage - 1],
+        viewWidth: viewWidth,
+        savedZoom: effectiveSavedZoom,
+        minScale: controller.minScale,
+        maxScale: controller.maxScale,
+      );
+      controller.goToPosition(
+        documentOffset: target.documentOffset,
+        zoom: target.zoom,
+        duration: Duration.zero,
+      );
+    } else if (effectiveSavedZoom != null && effectiveSavedZoom >= controller.minScale) {
+      controller.setZoom(
+        Offset.zero,
+        effectiveSavedZoom.clamp(controller.minScale, controller.maxScale),
+        duration: Duration.zero,
+      );
+    }
+
+    _syncDocumentLayoutFromController();
+    _lastReportedZoom = controller.currentZoom;
     _isDocumentLoaded = true;
     final actualPage = controller.pageNumber ?? targetPage;
     setState(() {
@@ -1143,43 +1201,20 @@ class PdfTabContentState extends State<PdfTabContent> {
       _initialPageNumber = targetPage;
       ReadingProgressService.instance.saveLastPage(widget.file.path, targetPage);
     }
-    final savedZoom = ReadingProgressService.instance.getLastZoom(widget.file.path);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || !_pdfViewerController.isReady) return;
-
-      if (targetPage >= 1 && targetPage <= totalPages) {
-        final pageLayout = _pdfViewerController.layout.pageLayouts[targetPage - 1];
-        final targetOffset = Offset(pageLayout.left, pageLayout.top);
-        if (savedZoom != null && savedZoom > 0.2) {
-          await _pdfViewerController.goToPosition(
-            documentOffset: targetOffset,
-            zoom: savedZoom,
-            duration: Duration.zero,
-          );
-        } else if (targetPage > 1) {
-          await _pdfViewerController.goToPage(
-            pageNumber: targetPage,
-            anchor: pdfrx.PdfPageAnchor.top,
-            duration: Duration.zero,
-          );
-        }
-      } else if (savedZoom != null && savedZoom > 0.2) {
-        await _pdfViewerController.setZoom(Offset.zero, savedZoom, duration: Duration.zero);
-      }
-    });
     widget.onPageInfoChanged?.call(_currentPage, _pagesCount);
   }
 
   void _onDocumentLoadFinished(pdfrx.PdfDocumentRef documentRef, bool succeeded) {
-    _loadingWatchdogTimer?.cancel();
     if (!mounted) return;
     if (!succeeded) {
+      _loadingWatchdogTimer?.cancel();
       final err = documentRef.resolveListenable().error;
       setState(() {
         _isLoading = false;
         _errorMessage = err?.toString() ?? 'Failed to open PDF document.';
       });
-    } else if (_isLoading) {
+    } else if (_isDocumentLoaded && _isLoading) {
+      _loadingWatchdogTimer?.cancel();
       setState(() {
         _isLoading = false;
       });
@@ -2208,12 +2243,14 @@ class PdfTabContentState extends State<PdfTabContent> {
                                 offset: Offset(0, 1),
                               ),
                               scrollPhysics: const ClampingScrollPhysics(),
-                              sizeDelegateProvider: const pdfrx.PdfViewerSizeDelegateProviderSmart(
-                                smartMaxScale: double.infinity,
-                                minScale: 0.2,
-                                maxScale: 8.0,
-                                maxPagesVisible: double.infinity,
-                                onePassRenderingScaleThreshold: 220 / 72,
+                              sizeDelegateProvider: const _DeferredInitSmartSizeDelegateProvider(
+                                inner: pdfrx.PdfViewerSizeDelegateProviderSmart(
+                                  smartMaxScale: double.infinity,
+                                  minScale: 0.2,
+                                  maxScale: 8.0,
+                                  maxPagesVisible: double.infinity,
+                                  onePassRenderingScaleThreshold: 220 / 72,
+                                ),
                               ),
                               maxImageBytesCachedOnMemory: 96 * 1024 * 1024,
                               verticalCacheExtent: 1.2,
@@ -2396,7 +2433,11 @@ class PdfTabContentState extends State<PdfTabContent> {
                 ),
                 if (_isLoading)
                   Container(
-                    color: Colors.black26,
+                    color: _isDocumentLoaded
+                        ? Colors.black26
+                        : (theme.brightness == Brightness.dark
+                            ? const Color(0xFF1A1C1E)
+                            : const Color(0xFFE8EAED)),
                     child: const Center(
                       child: CircularProgressIndicator(),
                     ),
@@ -2622,4 +2663,82 @@ class PdfTabContentState extends State<PdfTabContent> {
       ),
     );
   }
+}
+
+class _DeferredInitSmartSizeDelegateProvider extends pdfrx.PdfViewerSizeDelegateProvider {
+  const _DeferredInitSmartSizeDelegateProvider({required this.inner});
+
+  final pdfrx.PdfViewerSizeDelegateProviderSmart inner;
+
+  @override
+  pdfrx.PdfViewerSizeDelegate create() => _DeferredInitSmartSizeDelegate(inner.create());
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is _DeferredInitSmartSizeDelegateProvider && other.inner == inner);
+
+  @override
+  int get hashCode => inner.hashCode;
+}
+
+class _DeferredInitSmartSizeDelegate implements pdfrx.PdfViewerSizeDelegate {
+  _DeferredInitSmartSizeDelegate(this._inner);
+
+  final pdfrx.PdfViewerSizeDelegate _inner;
+
+  @override
+  double get onePassRenderingScaleThreshold => _inner.onePassRenderingScaleThreshold;
+
+  @override
+  void init(pdfrx.PdfViewerController controller) => _inner.init(controller);
+
+  @override
+  void dispose() => _inner.dispose();
+
+  @override
+  pdfrx.PdfViewerLayoutMetrics calculateMetrics({
+    required Size viewSize,
+    required pdfrx.PdfPageLayout? layout,
+    required int? pageNumber,
+    required double pageMargin,
+    required EdgeInsets? boundaryMargin,
+  }) => _inner.calculateMetrics(
+    viewSize: viewSize,
+    layout: layout,
+    pageNumber: pageNumber,
+    pageMargin: pageMargin,
+    boundaryMargin: boundaryMargin,
+  );
+
+  @override
+  void onLayoutInitialized({
+    required pdfrx.PdfViewerLayoutSnapshot state,
+    required int initialPageNumber,
+    required double coverScale,
+    required double? alternativeFitScale,
+    required pdfrx.PdfPageLayout layout,
+    required pdfrx.PdfDocument document,
+  }) {
+    // Initial zoom and viewport offset are applied synchronously in _onViewerReady.
+  }
+
+  @override
+  void onLayoutUpdate({
+    required pdfrx.PdfViewerLayoutSnapshot oldState,
+    required pdfrx.PdfViewerLayoutSnapshot newState,
+    required double currentZoom,
+    required Rect oldVisibleRect,
+    required int? anchorPageNumber,
+    required bool isLayoutChanged,
+    required bool isViewSizeChanged,
+  }) => _inner.onLayoutUpdate(
+    oldState: oldState,
+    newState: newState,
+    currentZoom: currentZoom,
+    oldVisibleRect: oldVisibleRect,
+    anchorPageNumber: anchorPageNumber,
+    isLayoutChanged: isLayoutChanged,
+    isViewSizeChanged: isViewSizeChanged,
+  );
 }
