@@ -1641,7 +1641,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     final newId = DateTime.now().millisecondsSinceEpoch.toString();
     final newBox = DrawnTextBox(
       id: newId,
-      text: r'\frac{a}{b}',
+      text: '',
       position: position,
       color: _activeColor,
       fontSize: math.max(18.0, _activeFontSize),

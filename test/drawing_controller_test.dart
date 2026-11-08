@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfreor/controllers/drawing_controller.dart';
 import 'package:pdfreor/models/editor_models.dart';
+import 'package:pdfreor/widgets/pdf_editor_canvas.dart';
 
 void main() {
   group('DrawingController & Stroke Eraser Tests', () {
@@ -239,6 +240,100 @@ void main() {
 
       controller.dispose();
     });
+
+    testWidgets(
+      'TextBox and Shape on later pages (docY >> viewportHeight) can be tapped, edited, and dragged',
+      (tester) async {
+        final controller = DrawingController();
+        // Scroll down to page 10: document y = 8000 is at viewport y = 0
+        final transformController = TransformationController(
+          Matrix4.translationValues(0.0, -8000.0, 0.0),
+        );
+        addTearDown(() {
+          transformController.dispose();
+          controller.dispose();
+        });
+
+        final tb = DrawnTextBox(
+          id: 'tb_page10',
+          text: 'Page 10 Annotation',
+          position: const Offset(100, 8100),
+          color: Colors.black,
+          fontSize: 16.0,
+          pageNumber: 10,
+          width: 200.0,
+        );
+        controller.addTextBox(tb);
+
+        controller.startShape(const Offset(100, 8300));
+        controller.updateShape(const Offset(260, 8400));
+        controller.endShape(ShapeType.rectangle, Colors.blue, 2.0, 10);
+        final shape = controller.shapes.first;
+
+        String? editingTbId;
+        String? selectedShapeId;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    return ListenableBuilder(
+                      listenable: controller,
+                      builder: (context, _) {
+                        return PdfEditorCanvas(
+                          controller: controller,
+                          transformationController: transformController,
+                          activeTool: EditorTool.select,
+                          activeShape: ShapeType.rectangle,
+                          activeColor: Colors.black,
+                          activeStrokeWidth: 2.0,
+                          currentPage: 10,
+                          stylusOnlyMode: false,
+                          editingTextBoxId: editingTbId,
+                          onEditingTextBoxChanged: (id) => setState(() => editingTbId = id),
+                          selectedShapeId: selectedShapeId,
+                          onSelectedShapeChanged: (id) => setState(() => selectedShapeId = id),
+                          onAddTextBoxRequested: (_) {},
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // 1. Drag TextBox at doc (100, 8100) -> viewport (100, 100) by (+50, +30)
+        // (PanGestureRecognizer consumes kTouchSlop = 18px before firing onPanUpdate)
+        await tester.dragFrom(const Offset(140, 112), const Offset(50, 30));
+        await tester.pump();
+        expect(tb.position.dx, greaterThan(120.0));
+        expect(tb.position.dy, greaterThan(8110.0));
+
+        // 2. Tap TextBox at its new viewport position to enter editing mode
+        await tester.tapAt(Offset(tb.position.dx + 30.0, tb.position.dy - 8000.0 + 12.0));
+        await tester.pump();
+        expect(editingTbId, 'tb_page10');
+
+        // 3. Tap Shape edge at doc (180, 8300) -> viewport (180, 300) to select it
+        await tester.tapAt(const Offset(180, 300));
+        await tester.pump();
+        expect(selectedShapeId, shape.id);
+
+        // 4. Drag selected Shape from viewport (180, 350) by (+50, +40)
+        await tester.dragFrom(const Offset(180, 350), const Offset(50, 40));
+        await tester.pump();
+        expect(shape.start.dx, greaterThan(120.0));
+        expect(shape.start.dy, greaterThan(8315.0));
+        expect(shape.end.dx, greaterThan(280.0));
+        expect(shape.end.dy, greaterThan(8415.0));
+      },
+    );
   });
 }
 

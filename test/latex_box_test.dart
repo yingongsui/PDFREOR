@@ -280,5 +280,39 @@ void main() {
         expect(fourExtraCopiesOverhead, lessThan(400));
       });
     });
+
+    test('LaTeX box can be initialized with empty text and display hint', () {
+      final box = DrawnTextBox(
+        id: 'empty_latex',
+        text: '',
+        position: const Offset(100, 150),
+        color: Colors.blue,
+        fontSize: 18.0,
+        pageNumber: 1,
+        isLatex: true,
+      );
+      expect(box.isLatex, true);
+      expect(box.text, isEmpty);
+    });
+
+    test('Latex quick operators can be reordered and persisted cleanly', () {
+      const settings = EditorSettings();
+      final initialOps = settings.latexQuickOperators;
+      expect(initialOps.length, greaterThan(3));
+
+      // Move first operator to third position
+      final reordered = List<String>.from(initialOps);
+      final moved = reordered.removeAt(0);
+      reordered.insert(2, moved);
+
+      final updatedSettings = settings.copyWith(latexQuickOperators: reordered);
+      expect(updatedSettings.latexQuickOperators[2], moved);
+      expect(updatedSettings.latexQuickOperators[0], initialOps[1]);
+
+      // Verify JSON roundtrip
+      final json = updatedSettings.toJson();
+      final restored = EditorSettings.fromJson(json);
+      expect(restored.latexQuickOperators, reordered);
+    });
   });
 }

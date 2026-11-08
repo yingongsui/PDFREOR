@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
-/// An auto-hiding, palm-safe vertical fast scrollbar thumb with a live page
-/// indicator bubble. Appears when scrolling or when lightly tapping the screen edge.
+/// An auto-hiding vertical fast scrollbar thumb attached to the screen edge
+/// that displays only the current page number.
 class PdfFastScrollbar extends StatefulWidget {
   final pdfrx.PdfViewerController controller;
   final ValueChanged<int>? onPageScrubbed;
@@ -55,7 +54,7 @@ class PdfFastScrollbar extends StatefulWidget {
     required Rect visibleRect,
     double topPadding = 12.0,
     double bottomPadding = 12.0,
-    double thumbHitHeight = 50.0,
+    double thumbHitHeight = 36.0,
   }) {
     final maxDocScrollY = docHeight - visibleRect.height;
     if (maxDocScrollY <= 1.0 || viewportHeight <= topPadding + bottomPadding + thumbHitHeight) {
@@ -76,13 +75,9 @@ class PdfFastScrollbar extends StatefulWidget {
 }
 
 class PdfFastScrollbarState extends State<PdfFastScrollbar> {
-  static const double _edgeRevealStripWidth = 18.0;
-  static const double _thumbHitWidth = 34.0;
-  static const double _thumbHitHeight = 50.0;
-  static const double _pillWidth = 22.0;
-  static const double _pillHeight = 46.0;
-  static const double _bubbleHeight = 34.0;
-  static const Duration _autoHideDelay = Duration(milliseconds: 2200);
+  static const double _edgeRevealStripWidth = 20.0;
+  static const double _thumbHitHeight = 36.0;
+  static const Duration _autoHideDelay = Duration(milliseconds: 1800);
 
   bool _isVisible = false;
   bool _isDragging = false;
@@ -224,17 +219,10 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
             : (widget.controller.pageNumber ??
                 PdfFastScrollbar.findPageAtDocumentY(layout.pageLayouts, probeY));
 
-        final double bubbleTop = (metrics.thumbTop + (_thumbHitHeight - _bubbleHeight) / 2.0)
-            .clamp(
-              widget.topPadding,
-              math.max(widget.topPadding, viewportHeight - widget.bottomPadding - _bubbleHeight),
-            )
-            .toDouble();
-
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            // Slim right-bezel tap zone to reveal the scrollbar on a light edge tap
+            // Slim right-edge tap zone to reveal the scrollbar on a light edge tap
             if (!showControls)
               Positioned(
                 right: 0,
@@ -247,61 +235,10 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
                 ),
               ),
 
-            // Non-interactive subtle track line shown only when visible
+            // Edge-snapped simple scroll thumb displaying only the current page number
             Positioned(
-              right: 12,
-              top: widget.topPadding + (_thumbHitHeight - _pillHeight) / 2.0,
-              bottom: widget.bottomPadding + (_thumbHitHeight - _pillHeight) / 2.0,
-              width: 3,
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  opacity: showControls ? 0.32 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Live page indicator bubble while dragging
-            if (_isDragging)
-              Positioned(
-                right: _thumbHitWidth + 8,
-                top: bubbleTop,
-                child: IgnorePointer(
-                  child: Material(
-                    elevation: 6,
-                    color: isDark ? const Color(0xF02B313B) : const Color(0xEE1E2430),
-                    shadowColor: Colors.black45,
-                    borderRadius: BorderRadius.circular(17),
-                    child: Container(
-                      height: _bubbleHeight,
-                      padding: const EdgeInsets.symmetric(horizontal: 13),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '$displayPage / $totalPages',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-            // Auto-hiding draggable pill thumb
-            Positioned(
-              right: 2,
+              right: 0,
               top: metrics.thumbTop,
-              width: _thumbHitWidth,
-              height: _thumbHitHeight,
               child: IgnorePointer(
                 ignoring: !showControls,
                 child: GestureDetector(
@@ -335,39 +272,40 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
                     });
                     _scheduleAutoHide();
                   },
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: AnimatedOpacity(
-                      opacity: showControls ? 0.96 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
-                        margin: const EdgeInsets.only(right: 2),
-                        width: _pillWidth,
-                        height: _pillHeight,
-                        decoration: BoxDecoration(
-                          color: _isDragging
-                              ? activeAccent
-                              : theme.colorScheme.surface.withValues(alpha: isDark ? 0.92 : 0.95),
-                          borderRadius: BorderRadius.circular(11),
-                          border: Border.all(
-                            color: _isDragging
-                                ? activeAccent
-                                : theme.colorScheme.outlineVariant.withValues(alpha: 0.75),
-                            width: 1.0,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 4,
-                              offset: Offset(0, 1.5),
-                            ),
-                          ],
+                  child: AnimatedOpacity(
+                    opacity: showControls ? 0.96 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: _thumbHitHeight,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _isDragging
+                            ? activeAccent
+                            : (isDark ? const Color(0xDD2D333F) : const Color(0xDD1E2430)),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(14),
+                          bottomLeft: Radius.circular(14),
                         ),
-                        child: Icon(
-                          Icons.unfold_more_rounded,
-                          size: 16,
-                          color: _isDragging ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(-1, 1),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        '$displayPage',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),

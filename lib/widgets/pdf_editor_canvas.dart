@@ -1,64 +1,13 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import '../services/editor_settings_service.dart';
 import 'pdf_canvas_items.dart';
 
-export 'pdf_canvas_items.dart' show kEditableElementRegionGroup;
-
-/// A Stack that does not reject hit-testing based on viewport size.
-/// In document space (which can be multi-page, scrolled, and zoomed),
-/// widgets placed anywhere in the document coordinates must receive hit testing.
-class DocumentStack extends Stack {
-  const DocumentStack({
-    super.key,
-    super.alignment = AlignmentDirectional.topStart,
-    super.textDirection,
-    super.fit = StackFit.loose,
-    super.clipBehavior = Clip.none,
-    super.children = const <Widget>[],
-  });
-
-  @override
-  RenderDocumentStack createRenderObject(BuildContext context) {
-    return RenderDocumentStack(
-      alignment: alignment,
-      textDirection: textDirection ?? Directionality.maybeOf(context),
-      fit: fit,
-      clipBehavior: clipBehavior,
-    );
-  }
-
-  @override
-  void updateRenderObject(BuildContext context, RenderDocumentStack renderObject) {
-    renderObject
-      ..alignment = alignment
-      ..textDirection = textDirection ?? Directionality.maybeOf(context)
-      ..fit = fit
-      ..clipBehavior = clipBehavior;
-  }
-}
-
-class RenderDocumentStack extends RenderStack {
-  RenderDocumentStack({
-    super.alignment,
-    super.textDirection,
-    super.fit = StackFit.loose,
-    super.clipBehavior = Clip.none,
-  });
-
-  @override
-  bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
-      result.add(BoxHitTestEntry(this, position));
-      return true;
-    }
-    return false;
-  }
-}
+export 'pdf_canvas_items.dart'
+    show kEditableElementRegionGroup, DocumentStack, RenderDocumentStack;
 
 class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
   bool stylusOnly;
@@ -580,16 +529,18 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                 child: child,
               );
             },
-            child: SizedBox(
-              width: double.infinity,
-              height: double.infinity,
-              child: DocumentStack(
-                clipBehavior: Clip.none,
-                children: [
-                  for (final shape in widget.controller.shapes)
-                    _buildShapeWidget(shape),
-                  for (final img in widget.controller.images)
-                    ImageCanvasItem(
+            child: DocumentStack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                for (final shape in widget.controller.shapes)
+                  _buildShapeWidget(shape),
+                for (final img in widget.controller.images)
+                  Positioned(
+                    key: ValueKey('img_pos_${img.id}'),
+                    left: img.position.dx,
+                    top: img.position.dy,
+                    child: ImageCanvasItem(
                       key: ValueKey('img_${img.id}'),
                       image: img,
                       transformationController: widget.transformationController,
@@ -604,39 +555,39 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                       },
                       onDelete: () => widget.controller.deleteImage(img.id),
                     ),
-                  for (final tb in widget.controller.textBoxes)
-                    Positioned(
-                      key: ValueKey(tb.id),
-                      left: tb.position.dx,
-                      top: tb.position.dy,
-                      child: TextBoxCanvasItem(
-                        key: ValueKey('tb_${tb.id}'),
-                        textBox: tb,
-                        textBoxFont: widget.textBoxFont,
-                        transformationController: widget.transformationController,
-                        isEditing: widget.editingTextBoxId == tb.id,
-                        onStartEditing: () => widget.onEditingTextBoxChanged?.call(tb.id),
-                        onFinishEditing: () => widget.onEditingTextBoxChanged?.call(null),
-                        onUpdate: (newText, newPos, newFontSize, newWidth) {
-                          tb.text = newText;
-                          tb.position = newPos;
-                          tb.fontSize = newFontSize;
-                          tb.width = newWidth;
-                          widget.controller.updateTextBox(tb);
-                        },
-                        onLayoutModificationCommitted: (oldPos, oldWidth) {
-                          widget.controller.recordTextBoxLayoutModification(tb, oldPos, oldWidth);
-                        },
-                        onDelete: () {
-                          if (widget.editingTextBoxId == tb.id) {
-                            widget.onEditingTextBoxChanged?.call(null);
-                          }
-                          widget.controller.deleteTextBox(tb.id);
-                        },
-                      ),
+                  ),
+                for (final tb in widget.controller.textBoxes)
+                  Positioned(
+                    key: ValueKey(tb.id),
+                    left: tb.position.dx,
+                    top: tb.position.dy,
+                    child: TextBoxCanvasItem(
+                      key: ValueKey('tb_${tb.id}'),
+                      textBox: tb,
+                      textBoxFont: widget.textBoxFont,
+                      transformationController: widget.transformationController,
+                      isEditing: widget.editingTextBoxId == tb.id,
+                      onStartEditing: () => widget.onEditingTextBoxChanged?.call(tb.id),
+                      onFinishEditing: () => widget.onEditingTextBoxChanged?.call(null),
+                      onUpdate: (newText, newPos, newFontSize, newWidth) {
+                        tb.text = newText;
+                        tb.position = newPos;
+                        tb.fontSize = newFontSize;
+                        tb.width = newWidth;
+                        widget.controller.updateTextBox(tb);
+                      },
+                      onLayoutModificationCommitted: (oldPos, oldWidth) {
+                        widget.controller.recordTextBoxLayoutModification(tb, oldPos, oldWidth);
+                      },
+                      onDelete: () {
+                        if (widget.editingTextBoxId == tb.id) {
+                          widget.onEditingTextBoxChanged?.call(null);
+                        }
+                        widget.controller.deleteTextBox(tb.id);
+                      },
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
         // Top banner for one-shot shape drawing

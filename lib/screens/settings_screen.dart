@@ -564,6 +564,125 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     }
   }
 
+  Future<void> _showReorderOperatorsSheet() async {
+    final theme = Theme.of(context);
+    final reorderedList = List<String>.from(_editorSettings.latexQuickOperators);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Icon(Icons.swap_vert_rounded, color: theme.colorScheme.primary),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Reorder Operators',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          FilledButton.tonal(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Drag the handle on the right to reorder formula shortcuts',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        itemCount: reorderedList.length,
+                        onReorderItem: (oldIndex, newIndex) {
+                          setSheetState(() {
+                            final item = reorderedList.removeAt(oldIndex);
+                            reorderedList.insert(newIndex, item);
+                          });
+                        },
+                        itemBuilder: (context, index) {
+                          final op = reorderedList[index];
+                          return ListTile(
+                            key: ValueKey('op_reorder_${op}_$index'),
+                            leading: Container(
+                              width: 52,
+                              height: 44,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+                                ),
+                              ),
+                              child: Math.tex(
+                                op,
+                                textStyle: TextStyle(
+                                  fontSize: 14,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                mathStyle: MathStyle.display,
+                                onErrorFallback: (_) => Text(op, style: const TextStyle(fontSize: 12)),
+                              ),
+                            ),
+                            title: Text(
+                              op,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            trailing: ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Icon(Icons.drag_handle_rounded, color: Colors.grey),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final updated = _editorSettings.copyWith(latexQuickOperators: reorderedList);
+    setState(() => _editorSettings = updated);
+    await EditorSettingsService.saveSettings(updated);
+  }
+
   Widget _buildMathFormulaOperatorsCard(ThemeData theme) {
     final operators = _editorSettings.latexQuickOperators;
     return Card(
@@ -600,7 +719,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Quick shortcuts available when editing mathematical formulas',
+                        'Quick shortcuts available when editing formulas • Drag to reorder',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
@@ -614,37 +733,107 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               runSpacing: 8,
               children: [
                 for (int i = 0; i < operators.length; i++)
-                  InputChip(
-                    label: Math.tex(
-                      operators[i],
-                      textStyle: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      mathStyle: MathStyle.display,
-                      onErrorFallback: (_) => Text(
-                        operators[i],
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                    deleteIcon: const Icon(Icons.close_rounded, size: 14),
-                    onDeleted: () async {
-                      final updatedList = List<String>.from(operators)..removeAt(i);
+                  DragTarget<int>(
+                    onWillAcceptWithDetails: (details) => details.data != i,
+                    onAcceptWithDetails: (details) async {
+                      final oldIndex = details.data;
+                      final newIndex = i;
+                      final updatedList = List<String>.from(operators);
+                      final item = updatedList.removeAt(oldIndex);
+                      updatedList.insert(newIndex, item);
                       final updated = _editorSettings.copyWith(latexQuickOperators: updatedList);
                       setState(() => _editorSettings = updated);
                       await EditorSettingsService.saveSettings(updated);
+                    },
+                    builder: (context, candidateData, rejectedData) {
+                      final isTargeted = candidateData.isNotEmpty;
+                      final chipWidget = InputChip(
+                        avatar: Icon(
+                          Icons.drag_indicator_rounded,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                        label: Math.tex(
+                          operators[i],
+                          textStyle: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          mathStyle: MathStyle.display,
+                          onErrorFallback: (_) => Text(
+                            operators[i],
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        deleteIcon: const Icon(Icons.close_rounded, size: 14),
+                        onDeleted: () async {
+                          final updatedList = List<String>.from(operators)..removeAt(i);
+                          final updated = _editorSettings.copyWith(latexQuickOperators: updatedList);
+                          setState(() => _editorSettings = updated);
+                          await EditorSettingsService.saveSettings(updated);
+                        },
+                      );
+
+                      return LongPressDraggable<int>(
+                        data: i,
+                        delay: const Duration(milliseconds: 180),
+                        hapticFeedbackOnStart: true,
+                        feedback: Material(
+                          elevation: 6,
+                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.transparent,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: theme.colorScheme.primary, width: 1.5),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
+                              ],
+                            ),
+                            child: Math.tex(
+                              operators[i],
+                              textStyle: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+                              mathStyle: MathStyle.display,
+                              onErrorFallback: (_) => Text(operators[i]),
+                            ),
+                          ),
+                        ),
+                        childWhenDragging: Opacity(opacity: 0.25, child: chipWidget),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: isTargeted
+                                ? Border.all(color: theme.colorScheme.primary, width: 2)
+                                : null,
+                            color: isTargeted
+                                ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                                : Colors.transparent,
+                          ),
+                          child: chipWidget,
+                        ),
+                      );
                     },
                   ),
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
                   onPressed: _showAddOperatorDialog,
                   icon: const Icon(Icons.add_rounded, size: 16),
                   label: const Text('Add Operator'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showReorderOperatorsSheet,
+                  icon: const Icon(Icons.swap_vert_rounded, size: 16),
+                  label: const Text('Reorder List'),
                 ),
                 TextButton.icon(
                   onPressed: () async {

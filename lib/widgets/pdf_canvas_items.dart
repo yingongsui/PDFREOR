@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
@@ -7,6 +8,57 @@ import '../services/editor_settings_service.dart';
 
 /// TapRegion group id shared by editable elements and the top property bar
 const String kEditableElementRegionGroup = 'EditableElementRegionGroup';
+
+/// A Stack that does not reject hit-testing based on its own box size.
+/// Required both for document-space overlays (where pages extend far beyond
+/// viewport dimensions) and for item stacks with handles extending outside bounds.
+class DocumentStack extends Stack {
+  const DocumentStack({
+    super.key,
+    super.alignment = AlignmentDirectional.topStart,
+    super.textDirection,
+    super.fit = StackFit.loose,
+    super.clipBehavior = Clip.none,
+    super.children = const <Widget>[],
+  });
+
+  @override
+  RenderDocumentStack createRenderObject(BuildContext context) {
+    return RenderDocumentStack(
+      alignment: alignment,
+      textDirection: textDirection ?? Directionality.maybeOf(context),
+      fit: fit,
+      clipBehavior: clipBehavior,
+    );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderDocumentStack renderObject) {
+    renderObject
+      ..alignment = alignment
+      ..textDirection = textDirection ?? Directionality.maybeOf(context)
+      ..fit = fit
+      ..clipBehavior = clipBehavior;
+  }
+}
+
+class RenderDocumentStack extends RenderStack {
+  RenderDocumentStack({
+    super.alignment,
+    super.textDirection,
+    super.fit = StackFit.loose,
+    super.clipBehavior = Clip.none,
+  });
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+}
 
 class _CanvasHandle extends StatelessWidget {
   final Offset position;
@@ -469,77 +521,76 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
     final handleBorderWidth = 2.0 / scale;
     final aspect = _height > 0 ? (_width / _height) : 1.0;
 
-    Widget body = GestureDetector(
-      onTap: () => setState(() => _isSelected = !_isSelected),
-      onPanStart: (_) => _startModification(),
-      onPanUpdate: (details) {
-        final deltaDoc = details.delta / _currentScale;
-        setState(() {
-          _position += deltaDoc;
-        });
-        widget.onUpdate(_position, _width, _height);
-      },
-      onPanEnd: (_) => _commitModification(),
-      child: Container(
-        width: _width,
-        height: _height,
-        decoration: BoxDecoration(
-          border: _isSelected
-              ? Border.all(color: Colors.blueAccent, width: math.max(1.0, 2.0 / scale))
-              : Border.all(color: Colors.transparent, width: 1),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: Image.memory(
-                  widget.image.imageBytes,
-                  fit: BoxFit.contain,
-                ),
+    Widget body = DocumentStack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _isSelected = !_isSelected),
+          onPanStart: (_) => _startModification(),
+          onPanUpdate: (details) {
+            final deltaDoc = details.delta / _currentScale;
+            setState(() {
+              _position += deltaDoc;
+            });
+            widget.onUpdate(_position, _width, _height);
+          },
+          onPanEnd: (_) => _commitModification(),
+          child: Container(
+            width: _width,
+            height: _height,
+            decoration: BoxDecoration(
+              border: _isSelected
+                  ? Border.all(color: Colors.blueAccent, width: math.max(1.0, 2.0 / scale))
+                  : Border.all(color: Colors.transparent, width: 1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Image.memory(
+                widget.image.imageBytes,
+                fit: BoxFit.contain,
               ),
             ),
-            if (_isSelected) ...[
-              Positioned(
-                top: -14 / scale,
-                right: -14 / scale,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onDelete,
-                  child: Container(
-                    width: 32 / scale,
-                    height: 32 / scale,
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
-                    ),
-                    child: Icon(Icons.close, size: 18 / scale, color: Colors.white),
-                  ),
-                ),
-              ),
-              _CanvasHandle(
-                position: Offset(_width, _height),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startModification(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  setState(() {
-                    _width = math.max(36.0, _width + deltaDoc.dx);
-                    _height = math.max(24.0, _width / aspect);
-                  });
-                  widget.onUpdate(_position, _width, _height);
-                },
-                onPanEnd: _commitModification,
-              ),
-            ],
-          ],
+          ),
         ),
-      ),
+        if (_isSelected) ...[
+          Positioned(
+            top: -14 / scale,
+            right: -14 / scale,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onDelete,
+              child: Container(
+                width: 32 / scale,
+                height: 32 / scale,
+                decoration: const BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                child: Icon(Icons.close, size: 18 / scale, color: Colors.white),
+              ),
+            ),
+          ),
+          _CanvasHandle(
+            position: Offset(_width, _height),
+            touchSize: handleTouchSize,
+            visualSize: handleVisualSize,
+            borderWidth: handleBorderWidth,
+            onPanStart: (_) => _startModification(),
+            onPanUpdate: (details) {
+              final deltaDoc = details.delta / _currentScale;
+              setState(() {
+                _width = math.max(36.0, _width + deltaDoc.dx);
+                _height = math.max(24.0, _width / aspect);
+              });
+              widget.onUpdate(_position, _width, _height);
+            },
+            onPanEnd: _commitModification,
+          ),
+        ],
+      ],
     );
 
     if (_isSelected) {
@@ -552,11 +603,7 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
       );
     }
 
-    return Positioned(
-      left: _position.dx,
-      top: _position.dy,
-      child: body,
-    );
+    return body;
   }
 }
 
@@ -713,7 +760,9 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -749,7 +798,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                   ),
                 ),
                 if (widget.textBox.isLatex) ...[
-                  const SizedBox(width: 6),
+                  const SizedBox(height: 3),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -904,7 +953,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
         child: Material(
           color: Colors.transparent,
           elevation: 0,
-          child: Stack(
+          child: DocumentStack(
             clipBehavior: Clip.none,
             children: [
               textInput,
@@ -1067,7 +1116,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
     return Material(
       color: Colors.transparent,
       elevation: 0,
-      child: Stack(
+      child: DocumentStack(
         clipBehavior: Clip.none,
         children: [
           textContent,
