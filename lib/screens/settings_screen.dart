@@ -414,7 +414,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 2.2.1',
+                            'Version 2.3.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,
