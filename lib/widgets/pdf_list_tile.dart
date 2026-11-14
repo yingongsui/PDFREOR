@@ -101,29 +101,7 @@ class PdfListTile extends StatelessWidget {
                         ),
                         if (isOpen) ...[
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: dodgerBlue,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.tab_rounded, size: 9, color: Colors.white),
-                                SizedBox(width: 2),
-                                Text(
-                                  'OPENED',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          const PdfOpenedBadge(compact: true),
                         ],
                       ],
                     ),
@@ -174,21 +152,7 @@ class PdfListTile extends StatelessWidget {
               if (isSelectionMode)
                 Padding(
                   padding: const EdgeInsets.only(left: 8, right: 4),
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: isSelected
-                        ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
-                        : null,
-                  ),
+                  child: PdfSelectionBadge(isSelected: isSelected),
                 ),
             ],
           ),

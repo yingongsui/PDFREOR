@@ -24,6 +24,23 @@ Rect paddedStrokeBounds(DrawingStroke stroke) {
   return stroke.getBounds().inflate(padding);
 }
 
+bool isPointWithinSelectedBounds(
+  DrawingController controller,
+  Offset docPos, {
+  String? selectedShapeId,
+  String? selectedStrokeId,
+}) {
+  final selectedShape = controller.findShapeById(selectedShapeId);
+  if (selectedShape != null && paddedShapeBounds(selectedShape).contains(docPos)) {
+    return true;
+  }
+  final selectedStroke = controller.findStrokeById(selectedStrokeId);
+  if (selectedStroke != null && paddedStrokeBounds(selectedStroke).contains(docPos)) {
+    return true;
+  }
+  return false;
+}
+
 class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
   bool stylusOnly;
   bool isDrawingMode;
@@ -107,20 +124,10 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.selectedStrokeId = selectedStrokeId;
   }
 
-  bool _isStylus(PointerEvent event) {
-    return event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus;
-  }
-
   bool _isEraserActive(PointerEvent event) {
-    if (activeTool == EditorTool.eraser) return true;
-    if (isHardwareButtonPressed) return true;
-    if ((event.buttons & kPrimaryStylusButton != 0) ||
-        (event.buttons & kSecondaryStylusButton != 0) ||
-        (event.buttons & kSecondaryMouseButton != 0)) {
-      return true;
-    }
-    return false;
+    return activeTool == EditorTool.eraser ||
+        isHardwareButtonPressed ||
+        isEraserButtonPressed(event);
   }
 
   Offset _getDocPoint(Offset screenPoint) {
@@ -136,7 +143,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
       return;
     }
 
-    final isStylus = _isStylus(event);
+    final isStylus = isStylusPointer(event);
     if (isStylus) {
       onStylusDetected?.call();
     }
@@ -152,24 +159,14 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
       return;
     }
 
-    if (selectedShapeId != null && !isStylus) {
-      final selectedShape = controller.shapes.cast<DrawnShape?>().firstWhere(
-        (s) => s?.id == selectedShapeId,
-        orElse: () => null,
-      );
-      if (selectedShape != null && paddedShapeBounds(selectedShape).contains(docPos)) {
-        return;
-      }
-    }
-
-    if (selectedStrokeId != null && !isStylus) {
-      final selectedStroke = controller.strokes.cast<DrawingStroke?>().firstWhere(
-        (s) => s?.id == selectedStrokeId,
-        orElse: () => null,
-      );
-      if (selectedStroke != null && paddedStrokeBounds(selectedStroke).contains(docPos)) {
-        return;
-      }
+    if (!isStylus &&
+        isPointWithinSelectedBounds(
+          controller,
+          docPos,
+          selectedShapeId: selectedShapeId,
+          selectedStrokeId: selectedStrokeId,
+        )) {
+      return;
     }
 
     if (!isStylus && activeTool == EditorTool.select) {

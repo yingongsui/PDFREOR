@@ -1,6 +1,26 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+bool isStylusPointer(PointerEvent event) {
+  return event.kind == PointerDeviceKind.stylus ||
+      event.kind == PointerDeviceKind.invertedStylus;
+}
+
+bool isEraserButtonPressed(PointerEvent event) {
+  return (event.buttons &
+          (kPrimaryStylusButton | kSecondaryStylusButton | kSecondaryMouseButton)) !=
+      0;
+}
+
+const List<ShapeType> kOrderedShapeTypes = <ShapeType>[
+  ShapeType.rectangle,
+  ShapeType.roundedRectangle,
+  ShapeType.circle,
+  ShapeType.line,
+  ShapeType.arrow,
+];
 
 int _annotationIdSeq = 0;
 
@@ -127,10 +147,6 @@ class DrawnTextAnnotation {
     required this.color,
     required this.pageNumber,
   }) : id = id ?? nextAnnotationId('ta');
-
-  void invalidateBounds() {
-    _cachedBounds = null;
-  }
 
   Rect getBounds() {
     final cached = _cachedBounds;
@@ -266,10 +282,6 @@ class DrawingStroke {
     final b = Rect.fromLTRB(minX, minY, maxX, maxY);
     _cachedBounds = b;
     return b;
-  }
-
-  Rect getSelectionBounds([double extraPadding = 0.0]) {
-    return getBounds().inflate(6.0 + strokeWidth * 0.5 + extraPadding);
   }
 
   void translate(Offset delta) {

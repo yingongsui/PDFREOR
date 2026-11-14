@@ -27,6 +27,7 @@ class PdfFloatingToolbar extends StatefulWidget {
   final VoidCallback onUndo;
   final VoidCallback onManagePages;
   final VoidCallback onSave;
+  final VoidCallback? onSaveOptions;
 
   const PdfFloatingToolbar({
     super.key,
@@ -52,6 +53,7 @@ class PdfFloatingToolbar extends StatefulWidget {
     required this.onUndo,
     required this.onManagePages,
     required this.onSave,
+    this.onSaveOptions,
   });
 
   @override
@@ -115,6 +117,10 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
     final theme = Theme.of(context);
     final screenSize = MediaQuery.of(context).size;
     final toolbarWidth = _isCollapsed ? 48.0 : 54.0;
+    final isDualInput = widget.isStylusDetected &&
+        (widget.activeTool == EditorTool.pen ||
+            widget.activeTool == EditorTool.select ||
+            widget.isEraserActive);
 
     return Positioned(
       left: _position.dx.clamp(4.0, math.max(4.0, screenSize.width - toolbarWidth - 4.0)),
@@ -177,59 +183,39 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               // Tool: Select / Navigation
-                              Builder(
-                                builder: (btnContext) {
-                                  final isDualInput = widget.isStylusDetected &&
-                                      (widget.activeTool == EditorTool.pen ||
-                                       widget.activeTool == EditorTool.select ||
-                                       widget.isEraserActive);
-                                  return _buildToolButton(
-                                    icon: Icons.pan_tool_alt_rounded,
-                                    tooltip: widget.isStylusDetected
-                                        ? 'Touch (Finger Touch, Move & Resize)'
-                                        : 'Select & Move (Text Selection)',
-                                    isSelected: isDualInput || widget.activeTool == EditorTool.select,
-                                    onPressed: () => widget.onToolSelected(EditorTool.select),
-                                  );
-                                },
+                              _buildToolButton(
+                                icon: Icons.pan_tool_alt_rounded,
+                                tooltip: widget.isStylusDetected
+                                    ? 'Touch (Finger Touch, Move & Resize)'
+                                    : 'Select & Move (Text Selection)',
+                                isSelected: isDualInput || widget.activeTool == EditorTool.select,
+                                onPressed: () => widget.onToolSelected(EditorTool.select),
                               ),
 
                               // Tool: Pen / Stylus / Eraser
                               // In dual input mode (stylus connected), both Touch and Pen are active.
                               // In eraser mode: icon changes to eraser, dot turns bright RED.
                               // In pen mode: icon is pen, dot turns bright GREEN if stylus connected.
-                              Builder(
-                                builder: (btnContext) {
-                                  final isDualInput = widget.isStylusDetected &&
-                                      (widget.activeTool == EditorTool.pen ||
-                                       widget.activeTool == EditorTool.select ||
-                                       widget.isEraserActive);
-                                  return _buildToolButton(
-                                    icon: widget.isEraserActive
-                                        ? Icons.cleaning_services_rounded
-                                        : Icons.edit_rounded,
-                                    tooltip: widget.isEraserActive
-                                        ? 'Eraser Active 🔴 (Click to switch to Pen)'
-                                        : widget.isStylusDetected
-                                            ? 'Pen (Stylus Handwriting 🖊️ 🟢, click to switch to Eraser)'
-                                            : 'Pen / Stylus Drawing',
-                                    isSelected: isDualInput || widget.activeTool == EditorTool.pen || widget.isEraserActive,
-                                    indicatorDotColor: widget.isEraserActive
-                                        ? const Color(0xFFFF1744) // Bright Red when eraser active
-                                        : widget.isStylusDetected
-                                            ? const Color(0xFF00E676) // Bright Green when stylus connected
-                                            : null,
-                                    onPressed: () {
-                                      if (widget.isEraserActive) {
-                                        widget.onToolSelected(EditorTool.pen);
-                                      } else if (widget.activeTool == EditorTool.pen) {
-                                        widget.onToolSelected(EditorTool.eraser);
-                                      } else {
-                                        widget.onToolSelected(EditorTool.pen);
-                                      }
-                                    },
-                                  );
-                                },
+                              _buildToolButton(
+                                icon: widget.isEraserActive
+                                    ? Icons.cleaning_services_rounded
+                                    : Icons.edit_rounded,
+                                tooltip: widget.isEraserActive
+                                    ? 'Eraser Active 🔴 (Click to switch to Pen)'
+                                    : widget.isStylusDetected
+                                        ? 'Pen (Stylus Handwriting 🖊️ 🟢, click to switch to Eraser)'
+                                        : 'Pen / Stylus Drawing',
+                                isSelected: isDualInput || widget.activeTool == EditorTool.pen || widget.isEraserActive,
+                                indicatorDotColor: widget.isEraserActive
+                                    ? const Color(0xFFFF1744) // Bright Red when eraser active
+                                    : widget.isStylusDetected
+                                        ? const Color(0xFF00E676) // Bright Green when stylus connected
+                                        : null,
+                                onPressed: () => widget.onToolSelected(
+                                  !widget.isEraserActive && widget.activeTool == EditorTool.pen
+                                      ? EditorTool.eraser
+                                      : EditorTool.pen,
+                                ),
                               ),
 
                               // Tool: Shapes (Pops up adjacent to button)
@@ -250,23 +236,19 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                               ),
 
                               // Tool: Text Box
-                              Builder(
-                                builder: (btnContext) => _buildToolButton(
-                                  icon: Icons.title_rounded,
-                                  tooltip: 'Text Box (Add Text)',
-                                  isSelected: widget.activeTool == EditorTool.textBox,
-                                  onPressed: () => widget.onToolSelected(EditorTool.textBox),
-                                ),
+                              _buildToolButton(
+                                icon: Icons.title_rounded,
+                                tooltip: 'Text Box (Add Text)',
+                                isSelected: widget.activeTool == EditorTool.textBox,
+                                onPressed: () => widget.onToolSelected(EditorTool.textBox),
                               ),
 
                               // Tool: LaTeX Box (Math Formula)
-                              Builder(
-                                builder: (btnContext) => _buildToolButton(
-                                  icon: Icons.functions_rounded,
-                                  tooltip: 'LaTeX Box (Math Formula)',
-                                  isSelected: widget.activeTool == EditorTool.latexBox,
-                                  onPressed: () => widget.onToolSelected(EditorTool.latexBox),
-                                ),
+                              _buildToolButton(
+                                icon: Icons.functions_rounded,
+                                tooltip: 'LaTeX Box (Math Formula)',
+                                isSelected: widget.activeTool == EditorTool.latexBox,
+                                onPressed: () => widget.onToolSelected(EditorTool.latexBox),
                               ),
 
                               // --- Divider separating shapes/tools from settings ---
@@ -360,27 +342,10 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                 onPressed: widget.onManagePages,
                               ),
 
-                              // Save Button
-                              IconButton(
-                                icon: _isSavingToolbar
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : Icon(
-                                        _showSaveSuccess
-                                            ? Icons.check_circle_rounded
-                                            : Icons.save_rounded,
-                                        size: 20,
-                                        color: _showSaveSuccess
-                                            ? Colors.green
-                                            : theme.colorScheme.primary,
-                                      ),
-                                tooltip: _showSaveSuccess
-                                    ? 'Saved!'
-                                    : 'Save to Original File',
-                                onPressed: _isSavingToolbar
+                              // Save Button (tap = Save; hold = Save Options)
+                              InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: _isSavingToolbar
                                     ? null
                                     : () async {
                                         setState(() {
@@ -409,6 +374,30 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                           }
                                         }
                                       },
+                                onLongPress: _isSavingToolbar
+                                    ? null
+                                    : widget.onSaveOptions,
+                                child: SizedBox(
+                                  width: 40,
+                                  height: 40,
+                                  child: Center(
+                                    child: _isSavingToolbar
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : Icon(
+                                            _showSaveSuccess
+                                                ? Icons.check_circle_rounded
+                                                : Icons.save_rounded,
+                                            size: 20,
+                                            color: _showSaveSuccess
+                                                ? Colors.green
+                                                : theme.colorScheme.primary,
+                                          ),
+                                  ),
+                                ),
                               ),
 
                               const Divider(height: 12, indent: 8, endIndent: 8),

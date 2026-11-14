@@ -60,75 +60,27 @@ extension _PdfTabContentMenus on PdfTabContentState {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildShapeQuickAction(dialogContext, ShapeType.rectangle, Icons.rectangle_outlined, 'Rectangle'),
-                          _buildShapeQuickAction(dialogContext, ShapeType.roundedRectangle, Icons.rounded_corner_rounded, 'Rounded Rect'),
-                          _buildShapeQuickAction(dialogContext, ShapeType.circle, Icons.circle_outlined, 'Circle'),
-                          _buildShapeQuickAction(dialogContext, ShapeType.line, Icons.horizontal_rule_rounded, 'Line'),
-                          _buildShapeQuickAction(dialogContext, ShapeType.arrow, Icons.arrow_forward_rounded, 'Arrow'),
+                          for (final type in kOrderedShapeTypes)
+                            _buildShapeQuickAction(dialogContext, type),
                         ],
                       ),
-                      const Divider(height: 14),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          Navigator.pop(dialogContext);
-                          _addInlineTextBox(docPos);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                          child: Row(
-                            children: [
-                              Icon(Icons.title_rounded, size: 18, color: theme.colorScheme.primary),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Add TextBox',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
+                      _buildContextMenuAction(
+                        dialogContext,
+                        icon: Icons.title_rounded,
+                        label: 'Add TextBox',
+                        onTap: () => _addInlineTextBox(docPos),
                       ),
-                      const Divider(height: 14),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          Navigator.pop(dialogContext);
-                          _addInlineLatexBox(docPos);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                          child: Row(
-                            children: [
-                              Icon(Icons.functions_rounded, size: 18, color: theme.colorScheme.primary),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Add LaTeX Formula',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
+                      _buildContextMenuAction(
+                        dialogContext,
+                        icon: Icons.functions_rounded,
+                        label: 'Add LaTeX Formula',
+                        onTap: () => _addInlineLatexBox(docPos),
                       ),
-                      const Divider(height: 14),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          Navigator.pop(dialogContext);
-                          _handlePaste(docPos);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                          child: Row(
-                            children: [
-                              Icon(Icons.content_paste_rounded, size: 18, color: theme.colorScheme.primary),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Paste (Text or Image)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
+                      _buildContextMenuAction(
+                        dialogContext,
+                        icon: Icons.content_paste_rounded,
+                        label: 'Paste (Text or Image)',
+                        onTap: () => _handlePaste(docPos),
                       ),
                     ],
                   ),
@@ -166,11 +118,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
           pageNumber: _currentPage,
         );
         _drawingController.addImage(newImg);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image pasted from clipboard!'), duration: Duration(seconds: 2)),
-          );
-        }
+        _showViewerSnackBar('Image pasted from clipboard!');
         return;
       }
     } catch (_) {}
@@ -189,33 +137,52 @@ extension _PdfTabContentMenus on PdfTabContentState {
           width: 220.0,
         );
         _drawingController.addTextBox(newBox);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Text pasted from clipboard!'), duration: Duration(seconds: 2)),
-          );
-        }
+        _showViewerSnackBar('Text pasted from clipboard!');
         return;
       }
     } catch (_) {}
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Clipboard is empty (no text or image found).'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
+    _showViewerSnackBar('Clipboard is empty (no text or image found).');
   }
 
-  Widget _buildShapeQuickAction(
-    BuildContext dialogContext,
-    ShapeType shape,
-    IconData icon,
-    String tooltip,
-  ) {
+  Widget _buildContextMenuAction(
+    BuildContext dialogContext, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Divider(height: 14),
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            Navigator.pop(dialogContext);
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShapeQuickAction(BuildContext dialogContext, ShapeType shape) {
     return Tooltip(
-      message: tooltip,
+      message: shape.label,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () {
@@ -230,7 +197,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
             borderRadius: BorderRadius.circular(8),
             color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
           ),
-          child: Icon(icon, size: 20),
+          child: Icon(shape.icon, size: 20),
         ),
       ),
     );

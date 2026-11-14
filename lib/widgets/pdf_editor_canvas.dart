@@ -7,10 +7,7 @@ import 'canvas/editor_canvas_painters.dart';
 import 'canvas/stylus_drawing_gesture_recognizer.dart';
 import 'pdf_canvas_items.dart';
 
-export 'canvas/stylus_drawing_gesture_recognizer.dart'
-    show StylusDrawingGestureRecognizer;
-export 'pdf_canvas_items.dart'
-    show kEditableElementRegionGroup, DocumentStack, RenderDocumentStack;
+export 'pdf_canvas_items.dart' show kEditableElementRegionGroup;
 
 class PdfEditorCanvas extends StatefulWidget {
   final DrawingController controller;
@@ -132,14 +129,10 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       widget.activeTool == EditorTool.latexBox;
 
   void _checkPointer(PointerEvent event) {
-    if (event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus) {
+    if (isStylusPointer(event)) {
       widget.onStylusDetected?.call();
     }
-    final isPressed = (event.buttons &
-            (kPrimaryStylusButton | kSecondaryStylusButton | kSecondaryMouseButton)) !=
-        0;
-    widget.onPointerEraserStateChanged?.call(isPressed);
+    widget.onPointerEraserStateChanged?.call(isEraserButtonPressed(event));
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -150,11 +143,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
     final isEraser = widget.isHardwareButtonPressed ||
         widget.activeTool == EditorTool.eraser ||
-        (event.buttons &
-            (kPrimaryStylusButton | kSecondaryStylusButton | kSecondaryMouseButton)) != 0;
+        isEraserButtonPressed(event);
 
-    final isStylus = event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus;
+    final isStylus = isStylusPointer(event);
 
     final isFingerTouchMode = !isStylus &&
         (widget.isStylusDetected || widget.stylusOnlyMode || widget.activeTool == EditorTool.select);
@@ -165,24 +156,13 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         widget.oneShotShape == null &&
         !widget.hasActiveTextSelection &&
         !isEraser) {
-      if (_selectedShapeId != null) {
-        final selectedShape = widget.controller.shapes.cast<DrawnShape?>().firstWhere(
-          (s) => s?.id == _selectedShapeId,
-          orElse: () => null,
-        );
-        if (selectedShape != null && paddedShapeBounds(selectedShape).contains(docPos)) {
-          return;
-        }
-      }
-
-      if (_selectedStrokeId != null) {
-        final selectedStroke = widget.controller.strokes.cast<DrawingStroke?>().firstWhere(
-          (s) => s?.id == _selectedStrokeId,
-          orElse: () => null,
-        );
-        if (selectedStroke != null && paddedStrokeBounds(selectedStroke).contains(docPos)) {
-          return;
-        }
+      if (isPointWithinSelectedBounds(
+        widget.controller,
+        docPos,
+        selectedShapeId: _selectedShapeId,
+        selectedStrokeId: _selectedStrokeId,
+      )) {
+        return;
       }
 
       final hitShape = widget.controller.hitTestShape(docPos, 24.0);
@@ -275,12 +255,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedStroke = _selectedStrokeId == null
-        ? null
-        : widget.controller.strokes.cast<DrawingStroke?>().firstWhere(
-            (s) => s?.id == _selectedStrokeId,
-            orElse: () => null,
-          );
+    final selectedStroke = widget.controller.findStrokeById(_selectedStrokeId);
 
     final hasWidgetAnnotations = widget.controller.shapes.isNotEmpty ||
         widget.controller.images.isNotEmpty ||

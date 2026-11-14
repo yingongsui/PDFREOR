@@ -29,10 +29,6 @@ class PdfTabManager extends ChangeNotifier {
           ? _openTabs[_activeIndex]
           : null;
 
-  bool isOpen(String path) {
-    return _openTabs.any((t) => t.path == path);
-  }
-
   Future<File> _getFile() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/$_fileName');

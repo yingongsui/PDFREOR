@@ -1,6 +1,35 @@
 part of '../home_screen.dart';
 
 extension _HomeScreenActions on _HomeScreenState {
+  void _showHomeSnackBar(
+    String message, {
+    Color? backgroundColor,
+    Duration duration = const Duration(seconds: 4),
+    bool replaceCurrent = false,
+  }) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (replaceCurrent) {
+      messenger.hideCurrentSnackBar();
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor,
+        duration: duration,
+      ),
+    );
+  }
+
+  void _mergeDiscoveredFiles(List<PdfFileInfo> files) {
+    final existingPaths = _allFiles.map((f) => f.path).toSet();
+    for (final f in files) {
+      if (!existingPaths.contains(f.path)) {
+        _allFiles.add(f);
+      }
+    }
+  }
+
   Future<void> _checkPermissionAndScan() async {
     final granted = await _scannerService.hasStoragePermission();
     if (!mounted) return;
@@ -83,9 +112,7 @@ extension _HomeScreenActions on _HomeScreenState {
         _refresh(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scan error: $e')),
-        );
+        _showHomeSnackBar('Scan error: $e');
       }
     }
   }
@@ -103,27 +130,18 @@ extension _HomeScreenActions on _HomeScreenState {
       final files = await _scannerService.scanCustomDirectory(path);
       if (mounted) {
         _refresh(() {
-          final existingPaths = _allFiles.map((f) => f.path).toSet();
-          for (final f in files) {
-            if (!existingPaths.contains(f.path)) {
-              _allFiles.add(f);
-            }
-          }
+          _mergeDiscoveredFiles(files);
           _isLoading = false;
           _applyFilterAndSort();
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Found ${files.length} PDF files')),
-        );
+        _showHomeSnackBar('Found ${files.length} PDF files');
       }
     } catch (e) {
       if (mounted) {
         _refresh(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scan failed: $e')),
-        );
+        _showHomeSnackBar('Scan failed: $e');
       }
     }
   }
@@ -134,17 +152,10 @@ extension _HomeScreenActions on _HomeScreenState {
       await _scannerService.addImportedFilePaths(files.map((f) => f.path));
       if (!mounted) return;
       _refresh(() {
-        final existingPaths = _allFiles.map((f) => f.path).toSet();
-        for (final f in files) {
-          if (!existingPaths.contains(f.path)) {
-            _allFiles.add(f);
-          }
-        }
+        _mergeDiscoveredFiles(files);
         _applyFilterAndSort();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Imported ${files.length} files')),
-      );
+      _showHomeSnackBar('Imported ${files.length} files');
     }
   }
 
@@ -211,17 +222,11 @@ extension _HomeScreenActions on _HomeScreenState {
   Future<void> _openExternal(PdfFileInfo file) async {
     try {
       final res = await OpenFilex.open(file.path);
-      if (res.type != ResultType.done && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unable to open: ${res.message}')),
-        );
+      if (res.type != ResultType.done) {
+        _showHomeSnackBar('Unable to open: ${res.message}');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Open error: $e')),
-        );
-      }
+      _showHomeSnackBar('Open error: $e');
     }
   }
 
@@ -234,11 +239,7 @@ extension _HomeScreenActions on _HomeScreenState {
         ),
       );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Share failed: $e')),
-        );
-      }
+      _showHomeSnackBar('Share failed: $e');
     }
   }
 
@@ -256,14 +257,10 @@ extension _HomeScreenActions on _HomeScreenState {
     final newPath = p.join(parentDir.path, newFileName);
 
     if (await File(newPath).exists()) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('A file named "$newFileName" already exists.'),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
-      }
+      _showHomeSnackBar(
+        'A file named "$newFileName" already exists.',
+        backgroundColor: Colors.red.shade700,
+      );
       return;
     }
 
@@ -289,21 +286,15 @@ extension _HomeScreenActions on _HomeScreenState {
         _applyFilterAndSort();
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Renamed to "$newFileName"'),
-          duration: const Duration(seconds: 2),
-        ),
+      _showHomeSnackBar(
+        'Renamed to "$newFileName"',
+        duration: const Duration(seconds: 2),
       );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to rename file: $e'),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
-      }
+      _showHomeSnackBar(
+        'Failed to rename file: $e',
+        backgroundColor: Colors.red.shade700,
+      );
     }
   }
 
@@ -318,16 +309,12 @@ extension _HomeScreenActions on _HomeScreenState {
       _selectedFilePaths.clear();
     });
     HapticFeedback.selectionClick();
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          files.length == 1
-              ? 'Copied "${files.first.name}" to clipboard'
-              : 'Copied ${files.length} files to clipboard',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    _showHomeSnackBar(
+      files.length == 1
+          ? 'Copied "${files.first.name}" to clipboard'
+          : 'Copied ${files.length} files to clipboard',
+      duration: const Duration(seconds: 2),
+      replaceCurrent: true,
     );
   }
 
@@ -341,16 +328,12 @@ extension _HomeScreenActions on _HomeScreenState {
       _selectedFilePaths.clear();
     });
     HapticFeedback.selectionClick();
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          files.length == 1
-              ? 'Cut "${files.first.name}". Tap Paste on any folder banner.'
-              : 'Cut ${files.length} files. Tap Paste on any folder banner.',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    _showHomeSnackBar(
+      files.length == 1
+          ? 'Cut "${files.first.name}". Tap Paste on any folder banner.'
+          : 'Cut ${files.length} files. Tap Paste on any folder banner.',
+      duration: const Duration(seconds: 2),
+      replaceCurrent: true,
     );
   }
 
@@ -362,15 +345,11 @@ extension _HomeScreenActions on _HomeScreenState {
       try {
         await targetDir.create(recursive: true);
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Cannot write to folder: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        _showHomeSnackBar(
+          'Cannot write to folder: $e',
+          backgroundColor: Colors.red,
+          replaceCurrent: true,
+        );
         return;
       }
     }
@@ -441,20 +420,14 @@ extension _HomeScreenActions on _HomeScreenState {
 
     await _startScan();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isCut
-                ? (successCount == 1 ? 'Moved 1 file successfully' : 'Moved $successCount files successfully')
-                : (successCount == 1 ? 'Copied 1 file successfully' : 'Copied $successCount files successfully'),
-          ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
+    _showHomeSnackBar(
+      isCut
+          ? (successCount == 1 ? 'Moved 1 file successfully' : 'Moved $successCount files successfully')
+          : (successCount == 1 ? 'Copied 1 file successfully' : 'Copied $successCount files successfully'),
+      backgroundColor: Colors.green,
+      duration: const Duration(seconds: 2),
+      replaceCurrent: true,
+    );
   }
 
   void _onFileTap(PdfFileInfo file) {

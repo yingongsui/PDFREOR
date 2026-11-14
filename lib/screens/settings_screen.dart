@@ -302,6 +302,137 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             onSettingsUpdated: _updateEditorSettings,
           ),
 
+          const SizedBox(height: 12),
+
+          // Annotation Persistence Mode Card
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.layers_rounded, color: theme.colorScheme.primary, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Annotation Persistence Mode',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              'Default format on open and tap-Save (hold Save for options)',
+                              style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  for (final option in const [
+                    (
+                      mode: AnnotationPersistenceMode.fileDefault,
+                      title: 'Auto (Follow File)',
+                      subtitle: 'Reopen Advanced files as editable; keep plain PDFs as Standard.',
+                    ),
+                    (
+                      mode: AnnotationPersistenceMode.alwaysEditable,
+                      title: 'Always Advanced (Editable)',
+                      subtitle: 'Embed tagged annotation stream + JSON so edits stay editable after reopen.',
+                    ),
+                    (
+                      mode: AnnotationPersistenceMode.alwaysFlattened,
+                      title: 'Always Standard (Flattened)',
+                      subtitle: 'Bake annotations as plain PDF graphics with no embedded JSON.',
+                    ),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          _updateEditorSettings(
+                            _editorSettings.copyWith(
+                              annotationPersistenceMode: option.mode,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _editorSettings.annotationPersistenceMode == option.mode
+                                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
+                                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _editorSettings.annotationPersistenceMode == option.mode
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _editorSettings.annotationPersistenceMode == option.mode
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                                size: 20,
+                                color: _editorSettings.annotationPersistenceMode == option.mode
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      option.title,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      option.subtitle,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                        height: 1.25,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
           const SizedBox(height: 24),
 
           // Section: Storage & Cache
@@ -386,7 +517,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 2.4.0',
+                            'Version 3.0.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,
@@ -450,17 +581,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                             IconButton(
                               icon: const Icon(Icons.copy_rounded, size: 18),
                               tooltip: 'Copy link',
-                              onPressed: () {
-                                Clipboard.setData(
-                                  const ClipboardData(text: 'https://github.com/yingongsui/PDFREOR'),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('GitHub link copied to clipboard'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
+                              onPressed: () => _copyGitHubLink(context),
                             ),
                             const Icon(Icons.open_in_new_rounded, size: 18),
                           ],
@@ -486,24 +607,30 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   }
 
 
+  static const String _githubUrl = 'https://github.com/yingongsui/PDFREOR';
+
+  Future<void> _copyGitHubLink(BuildContext context) async {
+    await Clipboard.setData(const ClipboardData(text: _githubUrl));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('GitHub link copied to clipboard'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _openGitHubUrl(BuildContext context) async {
-    const url = 'https://github.com/yingongsui/PDFREOR';
     try {
       const channel = MethodChannel('com.yin.pdfreor/stylus');
-      final success = await channel.invokeMethod<bool>('openUrl', {'url': url});
-      if (success != true) {
-        await Clipboard.setData(const ClipboardData(text: url));
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('GitHub link copied to clipboard')),
-        );
+      final success = await channel.invokeMethod<bool>('openUrl', {'url': _githubUrl});
+      if (success != true && context.mounted) {
+        await _copyGitHubLink(context);
       }
     } catch (_) {
-      await Clipboard.setData(const ClipboardData(text: url));
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GitHub link copied to clipboard')),
-      );
+      if (context.mounted) {
+        await _copyGitHubLink(context);
+      }
     }
   }
 }

@@ -214,43 +214,35 @@ class SavedAnnotationsPainter extends CustomPainter {
     }
 
     // 2. Render selection highlights on top without invalidating Picture cache
-    if (selectedTextAnnotationId != null) {
-      for (final ta in controller.textAnnotations) {
-        if (ta.id == selectedTextAnnotationId) {
-          final selPaint = Paint()
-            ..color = const Color(0xFF1E88E5)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = ta.type == TextAnnotationType.highlight ? 1.5 : 1.0;
-          final pad = ta.type == TextAnnotationType.highlight ? 1.5 : 2.0;
-          for (final rect in ta.rects) {
-            canvas.drawRect(rect.inflate(pad), selPaint);
-          }
-          break;
-        }
+    final selectedTa = controller.findTextAnnotationById(selectedTextAnnotationId);
+    if (selectedTa != null) {
+      final selPaint = Paint()
+        ..color = const Color(0xFF1E88E5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selectedTa.type == TextAnnotationType.highlight ? 1.5 : 1.0;
+      final pad = selectedTa.type == TextAnnotationType.highlight ? 1.5 : 2.0;
+      for (final rect in selectedTa.rects) {
+        canvas.drawRect(rect.inflate(pad), selPaint);
       }
     }
 
-    if (selectedStrokeId != null) {
-      for (final stroke in controller.strokes) {
-        if (stroke.id == selectedStrokeId) {
-          final glowPaint = Paint()
-            ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
-            ..strokeCap = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round
-            ..style = PaintingStyle.stroke;
-          for (final batch in stroke.getPathBatches()) {
-            glowPaint.strokeWidth = batch.strokeWidth + 10.0;
-            canvas.drawPath(batch.path, glowPaint);
-          }
-          final bounds = stroke.getBounds().inflate(6.0 + stroke.strokeWidth * 0.5);
-          final boxPaint = Paint()
-            ..color = const Color(0xFF1E88E5).withValues(alpha: 0.75)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2;
-          canvas.drawRRect(RRect.fromRectAndRadius(bounds, const Radius.circular(8)), boxPaint);
-          break;
-        }
+    final selectedStroke = controller.findStrokeById(selectedStrokeId);
+    if (selectedStroke != null) {
+      final glowPaint = Paint()
+        ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      for (final batch in selectedStroke.getPathBatches()) {
+        glowPaint.strokeWidth = batch.strokeWidth + 10.0;
+        canvas.drawPath(batch.path, glowPaint);
       }
+      final bounds = selectedStroke.getBounds().inflate(6.0 + selectedStroke.strokeWidth * 0.5);
+      final boxPaint = Paint()
+        ..color = const Color(0xFF1E88E5).withValues(alpha: 0.75)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2;
+      canvas.drawRRect(RRect.fromRectAndRadius(bounds, const Radius.circular(8)), boxPaint);
     }
 
     if (tc != null) {

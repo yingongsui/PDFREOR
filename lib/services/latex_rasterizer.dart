@@ -35,6 +35,15 @@ class LatexRasterizer {
     return (clamped * 20.0).round() / 20.0;
   }
 
+  static LatexRasterizerResult? _toResult(EncodedPngPayload? payload) {
+    if (payload == null) return null;
+    return LatexRasterizerResult(
+      bytes: payload.bytes,
+      size: Size(payload.logicalWidth, payload.logicalHeight),
+      offset: Offset(payload.offsetX, payload.offsetY),
+    );
+  }
+
   /// Crops transparent margins, quantizes anti-aliased alpha to 16 clean levels,
   /// and encodes a compact PNG (Grayscale+Alpha when monochrome, RGBA otherwise).
   static LatexRasterizerResult? encodeCompactLatexPng({
@@ -48,22 +57,18 @@ class LatexRasterizer {
     final int colorR = (color.r * 255.0).round().clamp(0, 255);
     final int colorG = (color.g * 255.0).round().clamp(0, 255);
     final int colorB = (color.b * 255.0).round().clamp(0, 255);
-    final payload = PngEncoder.encodeCompactAlphaPngIsolateSafe(
-      rawRgba: rawRgba,
-      width: width,
-      height: height,
-      logicalWidth: logicalSize.width,
-      logicalHeight: logicalSize.height,
-      colorR: colorR,
-      colorG: colorG,
-      colorB: colorB,
-      forceUniformColor: !preserveMultiColor,
-    );
-    if (payload == null) return null;
-    return LatexRasterizerResult(
-      bytes: payload.bytes,
-      size: Size(payload.logicalWidth, payload.logicalHeight),
-      offset: Offset(payload.offsetX, payload.offsetY),
+    return _toResult(
+      PngEncoder.encodeCompactAlphaPngIsolateSafe(
+        rawRgba: rawRgba,
+        width: width,
+        height: height,
+        logicalWidth: logicalSize.width,
+        logicalHeight: logicalSize.height,
+        colorR: colorR,
+        colorG: colorG,
+        colorB: colorB,
+        forceUniformColor: !preserveMultiColor,
+      ),
     );
   }
 
@@ -106,12 +111,7 @@ class LatexRasterizer {
         forceUniformColor: forceUniform,
       ),
     );
-    if (payload == null) return null;
-    return LatexRasterizerResult(
-      bytes: payload.bytes,
-      size: Size(payload.logicalWidth, payload.logicalHeight),
-      offset: Offset(payload.offsetX, payload.offsetY),
-    );
+    return _toResult(payload);
   }
 
   static Future<LatexRasterizerResult?> rasterize({

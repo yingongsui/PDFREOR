@@ -1,12 +1,14 @@
 import 'dart:io' show ZLibCodec;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfreor/controllers/drawing_controller.dart';
 import 'package:pdfreor/models/editor_models.dart';
 import 'package:pdfreor/services/editor_settings_service.dart';
 import 'package:pdfreor/services/latex_rasterizer.dart';
 import 'package:pdfreor/services/pdf_export_service.dart';
+import 'package:pdfreor/widgets/canvas/text_box_canvas_item.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 
 Uint8List _encodeNaiveRgbaPng(Uint8List rawRgba, int width, int height) {
@@ -313,6 +315,95 @@ void main() {
       final json = updatedSettings.toJson();
       final restored = EditorSettings.fromJson(json);
       expect(restored.latexQuickOperators, reordered);
+    });
+
+    testWidgets('Finished LaTeX box expands height to 120% for large operators', (tester) async {
+      final box = DrawnTextBox(
+        id: 'latex_sum',
+        text: r'\sum_{i=1}^{n} \frac{1}{i^2}',
+        position: Offset.zero,
+        color: Colors.black,
+        fontSize: 18.0,
+        pageNumber: 1,
+        width: 180.0,
+        isLatex: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: TextBoxCanvasItem(
+                    textBox: box,
+                    isEditing: false,
+                    onStartEditing: () {},
+                    onFinishEditing: () {},
+                    onUpdate: (_, _, _, _) {},
+                    onLayoutModificationCommitted: (_, _) {},
+                    onDelete: () {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final mathSize = tester.getSize(find.byType(Math));
+      final itemSize = tester.getSize(find.byType(TextBoxCanvasItem));
+      final expectedHeight = mathSize.height * 1.2 + 9.6 + 2.0;
+      expect(itemSize.height, moreOrLessEquals(expectedHeight, epsilon: 0.1));
+    });
+
+    testWidgets('Finished TextBox expands height to 120% while keeping text left-aligned', (tester) async {
+      final box = DrawnTextBox(
+        id: 'text_regular',
+        text: 'Sample Note',
+        position: Offset.zero,
+        color: Colors.black,
+        fontSize: 16.0,
+        pageNumber: 1,
+        width: 220.0,
+        isLatex: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: TextBoxCanvasItem(
+                    textBox: box,
+                    isEditing: false,
+                    onStartEditing: () {},
+                    onFinishEditing: () {},
+                    onUpdate: (_, _, _, _) {},
+                    onLayoutModificationCommitted: (_, _) {},
+                    onDelete: () {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final textSize = tester.getSize(find.byType(Text));
+      final textTopLeft = tester.getTopLeft(find.byType(Text));
+      final itemSize = tester.getSize(find.byType(TextBoxCanvasItem));
+      final expectedHeight = textSize.height * 1.2 + 7.2 + 2.0;
+      expect(itemSize.height, moreOrLessEquals(expectedHeight, epsilon: 0.1));
+      // 1.0 border + 6.0 horizontal padding = 7.0 left offset (left-aligned, not centered)
+      expect(textTopLeft.dx, moreOrLessEquals(7.0, epsilon: 0.1));
     });
   });
 }

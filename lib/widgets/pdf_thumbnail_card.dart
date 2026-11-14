@@ -118,39 +118,10 @@ class PdfThumbnailCard extends StatelessWidget {
 
                   // Open Badge (DodgerBlue)
                   if (isOpen)
-                    Positioned(
+                    const Positioned(
                       top: 8,
                       left: 44,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: dodgerBlue,
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: [
-                            BoxShadow(
-                              color: dodgerBlue.withValues(alpha: 0.4),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.tab_rounded, size: 10, color: Colors.white),
-                            SizedBox(width: 3),
-                            Text(
-                              'OPENED',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      child: PdfOpenedBadge(withShadow: true),
                     ),
 
                   // Selection indicator (only shown in selection mode)
@@ -158,20 +129,10 @@ class PdfThumbnailCard extends StatelessWidget {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: isSelected ? theme.colorScheme.primary : Colors.black45,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: isSelected
-                            ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
-                            : null,
+                      child: PdfSelectionBadge(
+                        isSelected: isSelected,
+                        unselectedBackgroundColor: Colors.black45,
+                        unselectedBorderColor: Colors.white,
                       ),
                     ),
                 ],

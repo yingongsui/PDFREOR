@@ -48,8 +48,8 @@ class PdfViewerTabBar extends StatelessWidget {
   Widget _buildTabItem(int index, PdfFileInfo file, bool isActive, ThemeData theme) {
     final isDirty = isTabDirty(file);
 
-    return Container(
-      margin: const EdgeInsets.only(right: 6),
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
       child: Material(
         color: isActive
             ? theme.colorScheme.primaryContainer

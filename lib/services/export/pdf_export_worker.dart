@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import '../../models/editor_models.dart';
+import '../annotation_persistence_codec.dart';
+import 'pdf_editable_layer_helper.dart';
 import 'pdf_export_geometry.dart';
 import 'pdf_export_models.dart';
 
@@ -36,7 +38,17 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
         .where((idx) => idx >= 0 && idx < origPageCount)
         .toSet();
 
+    // Always remove stale JSON attachment; only strip tagged annotation streams when
+    // re-emitting Advanced editable streams (so saving a formerly-Advanced file in Standard
+    // mode never drops previously baked visual annotations not in DrawingController).
+    final strippedStreams = payload.embedEditableData
+        ? PdfEditableLayerHelper.stripAnnotationStreams(doc)
+        : false;
+    final removedAttachment = PdfEditableLayerHelper.removeAnnotationAttachments(doc);
+
     if (deletedSet.isNotEmpty ||
+        ((strippedStreams || removedAttachment || payload.embedEditableData) &&
+            payload.baseBytes.length <= 25 * 1024 * 1024) ||
         (payload.baseBytes.length <= 25 * 1024 * 1024 &&
             countPdfEofMarkers(payload.baseBytes) >= 3)) {
       doc.fileStructure.incrementalUpdate = false;
@@ -62,6 +74,10 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
     for (int i = 0; i < payload.addedPagesCount; i++) {
       doc.pages.add();
     }
+
+    final preDrawSnapshots = payload.embedEditableData
+        ? PdfEditableLayerHelper.capturePreDrawSnapshots(doc)
+        : const <int, PagePreDrawSnapshot>{};
 
     // 5. Render text annotations with collinear rect merging & shared highlight ExtGState
     _drawExportTextAnnotations(
@@ -109,6 +125,38 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
       oldToNewPageIdx: oldToNewPageIdx,
       bitmapCache: bitmapCache,
     );
+
+    if (payload.embedEditableData) {
+      final postEditPageSizes = <(double w, double h)>[
+        for (int i = 0; i < doc.pages.count; i++)
+          (doc.pages[i].size.width, doc.pages[i].size.height),
+      ];
+      final bundle = AnnotationPersistenceCodec.buildBundleFromExportPayload(
+        payload: payload,
+        origPageBounds: origPageBounds,
+        oldToNewPageIdx: oldToNewPageIdx,
+        postEditPageSizes: postEditPageSizes,
+      );
+      if (!bundle.isEmpty) {
+        final taggedPages = <int>{
+          for (final s in bundle.strokes) s.pageIndex,
+          for (final sh in bundle.shapes) sh.pageIndex,
+          for (final tb in bundle.textBoxes) tb.pageIndex,
+          for (final im in bundle.images) im.pageIndex,
+          for (final ta in bundle.textAnnotations) ta.pageIndex,
+        };
+        for (final pIdx in taggedPages) {
+          if (pIdx >= 0 && pIdx < doc.pages.count) {
+            PdfEditableLayerHelper.tagAddedPageArtifacts(
+              doc.pages[pIdx],
+              preDrawSnapshots[pIdx],
+            );
+          }
+        }
+        final gzBytes = AnnotationPersistenceCodec.encodeGzip(bundle);
+        PdfEditableLayerHelper.writeAnnotationAttachment(doc, gzBytes);
+      }
+    }
 
     return ExportWorkerResult(pdfBytes: doc.saveAsBytesSync());
   } finally {

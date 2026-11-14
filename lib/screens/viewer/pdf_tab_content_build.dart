@@ -4,30 +4,11 @@ extension _PdfTabContentBuild on PdfTabContentState {
   Widget _buildTabContent(BuildContext context) {
     final theme = Theme.of(context);
 
-    final selectedShape = _selectedShapeId != null
-        ? _drawingController.shapes.cast<DrawnShape?>().firstWhere(
-              (s) => s?.id == _selectedShapeId,
-              orElse: () => null,
-            )
-        : null;
-    final selectedStroke = _selectedStrokeId != null
-        ? _drawingController.strokes.cast<DrawingStroke?>().firstWhere(
-              (s) => s?.id == _selectedStrokeId,
-              orElse: () => null,
-            )
-        : null;
-    final editingTextBox = _editingTextBoxId != null
-        ? _drawingController.textBoxes.cast<DrawnTextBox?>().firstWhere(
-              (t) => t?.id == _editingTextBoxId,
-              orElse: () => null,
-            )
-        : null;
-    final selectedTextAnnotation = _selectedTextAnnotationId != null
-        ? _drawingController.textAnnotations.cast<DrawnTextAnnotation?>().firstWhere(
-              (ta) => ta?.id == _selectedTextAnnotationId,
-              orElse: () => null,
-            )
-        : null;
+    final selectedShape = _drawingController.findShapeById(_selectedShapeId);
+    final selectedStroke = _drawingController.findStrokeById(_selectedStrokeId);
+    final editingTextBox = _drawingController.findTextBoxById(_editingTextBoxId);
+    final selectedTextAnnotation =
+        _drawingController.findTextAnnotationById(_selectedTextAnnotationId);
 
     return _errorMessage != null
         ? Center(
@@ -58,12 +39,16 @@ extension _PdfTabContentBuild on PdfTabContentState {
                         onPressed: () {
                           _reloadGeneration++;
                           _baseNormalizedWidth = null;
-                          _rebuildDocumentRef();
                           _refresh(() {
                             _errorMessage = null;
                             _isLoading = true;
                           });
-                          _startLoadingWatchdog();
+                          if (_documentRef == null) {
+                            _beginInitialDocumentOpen();
+                          } else {
+                            _rebuildDocumentRef();
+                            _startLoadingWatchdog();
+                          }
                         },
                         icon: const Icon(Icons.refresh),
                         label: const Text('Retry'),
@@ -83,14 +68,12 @@ extension _PdfTabContentBuild on PdfTabContentState {
         : Listener(
             behavior: HitTestBehavior.translucent,
             onPointerHover: (event) {
-              if (event.kind == PointerDeviceKind.stylus ||
-                  event.kind == PointerDeviceKind.invertedStylus) {
+              if (isStylusPointer(event)) {
                 _onStylusDetected();
               }
             },
             onPointerDown: (event) {
-              if (event.kind == PointerDeviceKind.stylus ||
-                  event.kind == PointerDeviceKind.invertedStylus) {
+              if (isStylusPointer(event)) {
                 _onStylusDetected();
                 if (!_isEraserActive && _activeTool != EditorTool.eraser) {
                   _onStylusDrawStarted();
@@ -111,11 +94,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                     return Listener(
                       behavior: HitTestBehavior.translucent,
                       onPointerDown: (event) {
-                        final isStylus = event.kind == PointerDeviceKind.stylus ||
-                            event.kind == PointerDeviceKind.invertedStylus;
                         final nearHorizontalEdge = event.localPosition.dx >= newSize.width - 42.0 ||
                             event.localPosition.dx <= 28.0;
-                        if (!isStylus && nearHorizontalEdge) {
+                        if (!isStylusPointer(event) && nearHorizontalEdge) {
                           _edgeTapPointerId = event.pointer;
                           _edgeTapDownPos = event.localPosition;
                           _edgeTapDownTime = event.timeStamp;
@@ -143,9 +124,11 @@ extension _PdfTabContentBuild on PdfTabContentState {
                         fit: StackFit.expand,
                         children: [
                         RepaintBoundary(
-                          child: pdfrx.PdfViewer(
-                            _documentRef,
-                            controller: _pdfViewerController,
+                          child: _documentRef == null
+                              ? const SizedBox.shrink()
+                              : pdfrx.PdfViewer(
+                                  _documentRef!,
+                                  controller: _pdfViewerController,
                             fontManager: PdfSystemFontService.instance.fontManager,
                             initialPageNumber: _initialPageNumber,
                             params: pdfrx.PdfViewerParams(
@@ -376,6 +359,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   onUndo: () => _drawingController.undo(),
                   onManagePages: _openPageManager,
                   onSave: () => _saveToOriginalFile(showFeedback: true),
+                  onSaveOptions: _promptSaveMethodDialog,
                 ),
                 if (_isLoading)
                   Container(

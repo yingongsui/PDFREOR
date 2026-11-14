@@ -6,13 +6,27 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import '../controllers/drawing_controller.dart';
+import 'annotation_persistence_codec.dart';
 import 'atomic_file_store.dart';
 import 'editor_settings_service.dart';
+import 'export/pdf_editable_layer_helper.dart';
 import 'export/pdf_export_geometry.dart' as geom;
 import 'export/pdf_export_models.dart';
 import 'export/pdf_export_worker.dart';
 import 'latex_rasterizer.dart';
 import 'pdf_image_optimizer.dart';
+
+class PdfInspectResult {
+  final bool hasEditablePayload;
+  final PersistedAnnotationsBundle? bundle;
+  final Uint8List? cleanBaseBytes;
+
+  const PdfInspectResult({
+    required this.hasEditablePayload,
+    this.bundle,
+    this.cleanBaseBytes,
+  });
+}
 
 class PdfExportService {
   PdfExportService._();
@@ -20,10 +34,6 @@ class PdfExportService {
   /// Quantizes a PDF point coordinate to 0.1 pt (1/720 inch) precision to reduce
   /// floating-point string bloat and improve Deflate compression of content streams.
   static double roundPdfCoord(double value) => geom.roundPdfCoord(value);
-
-  static Offset roundPdfOffset(Offset p) => geom.roundPdfOffset(p);
-
-  static Rect roundPdfRect(Rect r) => geom.roundPdfRect(r);
 
   /// Simplifies a polyline in PDF point space using iterative Ramer-Douglas-Peucker (RDP)
   /// and quantizes surviving vertices to 0.1 pt precision.
@@ -44,11 +54,6 @@ class PdfExportService {
     return AtomicFileStore.writeBytes(targetFile, bytes);
   }
 
-  /// Atomically writes UTF-8 [content] to [targetFile] via [AtomicFileStore].
-  static Future<void> atomicWriteString(File targetFile, String content) {
-    return AtomicFileStore.writeString(targetFile, content);
-  }
-
   /// Renders all annotations from [drawingController], applies staged page deletions
   /// and blank page additions, and returns the resulting PDF bytes.
   /// Heavy PDF parsing, path building, and compression run off the main UI isolate.
@@ -62,6 +67,7 @@ class PdfExportService {
     double pageSpacing = 4.0,
     List<Rect>? pageDocBounds,
     List<Size>? pdfPageSizes,
+    bool embedEditableData = false,
   }) async {
     final hasLatex = drawingController.textBoxes.any(
       (tb) => tb.isLatex && tb.text.trim().isNotEmpty,
@@ -137,6 +143,7 @@ class PdfExportService {
         }
       }
       textBoxDtos.add(ExportTextBoxDto(
+        id: tb.id,
         index: i,
         text: tb.text,
         posX: tb.position.dx,
@@ -173,6 +180,7 @@ class PdfExportService {
           );
         }
         imageDtos.add(ExportImageDto(
+          id: img.id,
           posX: img.position.dx,
           posY: img.position.dy,
           width: img.width,
@@ -185,6 +193,7 @@ class PdfExportService {
     final textAnnDtos = [
       for (final ta in drawingController.textAnnotations)
         ExportTextAnnotationDto(
+          id: ta.id,
           type: ta.type,
           rects: [
             for (final r in ta.rects) (r.left, r.top, r.width, r.height),
@@ -197,6 +206,7 @@ class PdfExportService {
     final strokeDtos = [
       for (final s in drawingController.strokes)
         ExportStrokeDto(
+          id: s.id,
           points: [
             for (final p in s.points) (p.offset.dx, p.offset.dy, p.pressure),
           ],
@@ -208,6 +218,7 @@ class PdfExportService {
     final shapeDtos = [
       for (final sh in drawingController.shapes)
         ExportShapeDto(
+          id: sh.id,
           type: sh.type,
           startX: sh.start.dx,
           startY: sh.start.dy,
@@ -239,6 +250,7 @@ class PdfExportService {
       preRasterizedLatex: preRasterizedLatex,
       preRasterizedFallbacks: preRasterizedFallbacks,
       optimizedImages: optimizedImages,
+      embedEditableData: embedEditableData,
     );
 
     var workerResult = await Isolate.run(() => runPdfExportWorker(payload));
@@ -322,6 +334,57 @@ class PdfExportService {
   }
 
   /// Builds exported PDF bytes and atomically writes them to [file].
+  /// Inspects PDF bytes in an isolate to detect embedded Advanced editable annotations.
+  /// When [prepareCleanBaseForEditable] is true and a valid payload exists, strips
+  /// our tagged annotation streams and attachment to return clean base PDF bytes.
+  static Future<PdfInspectResult> inspectPdfDocument(
+    Uint8List fileBytes, {
+    required bool prepareCleanBaseForEditable,
+  }) {
+    return Isolate.run(() {
+      sf.PdfDocument? doc;
+      try {
+        doc = sf.PdfDocument(inputBytes: fileBytes);
+        final gzBytes =
+            PdfEditableLayerHelper.extractAnnotationAttachmentBytes(doc);
+        if (gzBytes == null) {
+          return const PdfInspectResult(hasEditablePayload: false);
+        }
+        final bundle = AnnotationPersistenceCodec.decodeGzip(gzBytes);
+        if (bundle == null || bundle.pageCount != doc.pages.count) {
+          return const PdfInspectResult(hasEditablePayload: false);
+        }
+
+        Uint8List? cleanBaseBytes;
+        if (prepareCleanBaseForEditable) {
+          final stripped = PdfEditableLayerHelper.stripAnnotationStreams(doc);
+          final removed = PdfEditableLayerHelper.removeAnnotationAttachments(doc);
+          if (stripped || removed) {
+            doc.compressionLevel = sf.PdfCompressionLevel.best;
+            doc.fileStructure.crossReferenceType =
+                sf.PdfCrossReferenceType.crossReferenceStream;
+            if (fileBytes.length <= 25 * 1024 * 1024) {
+              doc.fileStructure.incrementalUpdate = false;
+            }
+            cleanBaseBytes = Uint8List.fromList(doc.saveAsBytesSync());
+          } else {
+            cleanBaseBytes = fileBytes;
+          }
+        }
+
+        return PdfInspectResult(
+          hasEditablePayload: true,
+          bundle: bundle,
+          cleanBaseBytes: cleanBaseBytes,
+        );
+      } catch (_) {
+        return const PdfInspectResult(hasEditablePayload: false);
+      } finally {
+        doc?.dispose();
+      }
+    });
+  }
+
   static Future<Uint8List> exportToFile({
     required File file,
     required Uint8List baseBytes,
@@ -332,6 +395,7 @@ class PdfExportService {
     int addedPagesCount = 0,
     List<Rect>? pageDocBounds,
     List<Size>? pdfPageSizes,
+    bool embedEditableData = false,
   }) async {
     final finalBytes = await buildExportBytes(
       baseBytes: baseBytes,
@@ -342,6 +406,7 @@ class PdfExportService {
       addedPagesCount: addedPagesCount,
       pageDocBounds: pageDocBounds,
       pdfPageSizes: pdfPageSizes,
+      embedEditableData: embedEditableData,
     );
     await atomicWriteBytes(file, finalBytes);
     return finalBytes;

@@ -490,66 +490,59 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
       return const SizedBox.shrink();
     }
 
-    final Widget displayedWidget;
-    if (widget.textBox.isLatex) {
-      displayedWidget = Container(
-        width: _width,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: widget.textBox.color.withValues(alpha: 0.3),
-            width: 1.0,
-          ),
+    final displayedWidget = Container(
+      width: _width,
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: widget.textBox.isLatex ? 4.8 : 3.6),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: widget.textBox.color.withValues(alpha: 0.3),
+          width: 1.0,
         ),
-        child: ClipRect(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const NeverScrollableScrollPhysics(),
-            child: Math.tex(
-              widget.textBox.text,
-              textStyle: TextStyle(
-                color: widget.textBox.color,
-                fontSize: widget.textBox.fontSize,
+      ),
+      child: widget.textBox.isLatex
+          ? ClipRect(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
+                clipBehavior: Clip.none,
+                child: Center(
+                  heightFactor: 1.2,
+                  child: Math.tex(
+                    widget.textBox.text,
+                    textStyle: TextStyle(
+                      color: widget.textBox.color,
+                      fontSize: widget.textBox.fontSize,
+                    ),
+                    mathStyle: MathStyle.display,
+                    onErrorFallback: (err) => Text(
+                      widget.textBox.text,
+                      style: TextStyle(
+                        color: widget.textBox.color,
+                        fontSize: widget.textBox.fontSize,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              mathStyle: MathStyle.display,
-              onErrorFallback: (err) => Text(
+            )
+          : Align(
+              alignment: Alignment.centerLeft,
+              heightFactor: 1.2,
+              child: Text(
                 widget.textBox.text,
+                softWrap: true,
                 style: TextStyle(
                   color: widget.textBox.color,
                   fontSize: widget.textBox.fontSize,
+                  fontWeight: FontWeight.w500,
+                  height: 1.3,
+                  fontFamily: widget.textBoxFont.cssFontFamily,
                 ),
               ),
             ),
-          ),
-        ),
-      );
-    } else {
-      displayedWidget = Container(
-        width: _width,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: widget.textBox.color.withValues(alpha: 0.3),
-            width: 1.0,
-          ),
-        ),
-        child: Text(
-          widget.textBox.text,
-          softWrap: true,
-          style: TextStyle(
-            color: widget.textBox.color,
-            fontSize: widget.textBox.fontSize,
-            fontWeight: FontWeight.w500,
-            height: 1.3,
-            fontFamily: widget.textBoxFont.cssFontFamily,
-          ),
-        ),
-      );
-    }
+    );
 
     final textContent = GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -564,13 +557,9 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
       child: displayedWidget,
     );
 
-    return Material(
-      color: Colors.transparent,
-      elevation: 0,
-      child: DocumentStack(
-        clipBehavior: Clip.none,
-        children: [textContent, _buildResizeHandle()],
-      ),
+    return DocumentStack(
+      clipBehavior: Clip.none,
+      children: [textContent, _buildResizeHandle()],
     );
   }
 }

@@ -5,6 +5,12 @@ import 'package:path_provider/path_provider.dart';
 import '../models/editor_models.dart';
 import 'atomic_file_store.dart';
 
+enum AnnotationPersistenceMode {
+  fileDefault,     // Follow file: editable if embedded Advanced payload exists, else standard flattened
+  alwaysEditable,  // Always embed Advanced independent annotation streams + JSON attachment
+  alwaysFlattened, // Always flatten to standard PDF (strip any prior Advanced payload on save)
+}
+
 enum AppFontFamily {
   sansSerif, // Sans-Serif (Modern / HeiTi / Noto Sans / Helvetica)
   serif,     // Serif (Classical / SongTi / Mincho / Times Roman)
@@ -56,6 +62,7 @@ class EditorSettings {
   final bool toolbarCollapsed;
   final AppFontFamily textBoxFont;
   final List<String> latexQuickOperators;
+  final AnnotationPersistenceMode annotationPersistenceMode;
 
   const EditorSettings({
     this.activeColor = const Color(0xFF212121),
@@ -68,6 +75,7 @@ class EditorSettings {
     this.toolbarCollapsed = false,
     this.textBoxFont = AppFontFamily.sansSerif,
     this.latexQuickOperators = kDefaultLatexOperators,
+    this.annotationPersistenceMode = AnnotationPersistenceMode.fileDefault,
   });
 
   EditorSettings copyWith({
@@ -81,6 +89,7 @@ class EditorSettings {
     bool? toolbarCollapsed,
     AppFontFamily? textBoxFont,
     List<String>? latexQuickOperators,
+    AnnotationPersistenceMode? annotationPersistenceMode,
   }) {
     return EditorSettings(
       activeColor: activeColor ?? this.activeColor,
@@ -93,6 +102,8 @@ class EditorSettings {
       toolbarCollapsed: toolbarCollapsed ?? this.toolbarCollapsed,
       textBoxFont: textBoxFont ?? this.textBoxFont,
       latexQuickOperators: latexQuickOperators ?? this.latexQuickOperators,
+      annotationPersistenceMode:
+          annotationPersistenceMode ?? this.annotationPersistenceMode,
     );
   }
 
@@ -107,11 +118,13 @@ class EditorSettings {
         'toolbarCollapsed': toolbarCollapsed,
         'textBoxFont': textBoxFont.index,
         'latexQuickOperators': latexQuickOperators,
+        'annotationPersistenceMode': annotationPersistenceMode.index,
       };
 
   factory EditorSettings.fromJson(Map<String, dynamic> json) {
     final shapeIdx = (json['activeShape'] as num?)?.toInt();
     final fontIdx = (json['textBoxFont'] as num?)?.toInt();
+    final persistenceIdx = (json['annotationPersistenceMode'] as num?)?.toInt();
     return EditorSettings(
       activeColor: json['activeColor'] != null
           ? Color(json['activeColor'] as int)
@@ -139,6 +152,11 @@ class EditorSettings {
       latexQuickOperators: json['latexQuickOperators'] != null
           ? List<String>.from(json['latexQuickOperators'] as List)
           : kDefaultLatexOperators,
+      annotationPersistenceMode: persistenceIdx != null &&
+              persistenceIdx >= 0 &&
+              persistenceIdx < AnnotationPersistenceMode.values.length
+          ? AnnotationPersistenceMode.values[persistenceIdx]
+          : AnnotationPersistenceMode.fileDefault,
     );
   }
 }

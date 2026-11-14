@@ -3,12 +3,14 @@ import '../../models/editor_models.dart';
 import '../editor_settings_service.dart';
 
 class ExportTextAnnotationDto {
+  final String? id;
   final TextAnnotationType type;
   final List<(double l, double t, double w, double h)> rects;
   final int colorArgb;
   final int pageNumber;
 
   const ExportTextAnnotationDto({
+    this.id,
     required this.type,
     required this.rects,
     required this.colorArgb,
@@ -17,11 +19,13 @@ class ExportTextAnnotationDto {
 }
 
 class ExportStrokeDto {
+  final String? id;
   final List<(double x, double y, double pressure)> points;
   final int colorArgb;
   final double strokeWidth;
 
   const ExportStrokeDto({
+    this.id,
     required this.points,
     required this.colorArgb,
     required this.strokeWidth,
@@ -29,6 +33,7 @@ class ExportStrokeDto {
 }
 
 class ExportShapeDto {
+  final String? id;
   final ShapeType type;
   final double startX;
   final double startY;
@@ -38,6 +43,7 @@ class ExportShapeDto {
   final double strokeWidth;
 
   const ExportShapeDto({
+    this.id,
     required this.type,
     required this.startX,
     required this.startY,
@@ -49,6 +55,7 @@ class ExportShapeDto {
 }
 
 class ExportTextBoxDto {
+  final String? id;
   final int index;
   final String text;
   final double posX;
@@ -60,6 +67,7 @@ class ExportTextBoxDto {
   final String? preRasterKey;
 
   const ExportTextBoxDto({
+    this.id,
     required this.index,
     required this.text,
     required this.posX,
@@ -73,6 +81,7 @@ class ExportTextBoxDto {
 }
 
 class ExportImageDto {
+  final String? id;
   final double posX;
   final double posY;
   final double width;
@@ -80,6 +89,7 @@ class ExportImageDto {
   final String cacheKey;
 
   const ExportImageDto({
+    this.id,
     required this.posX,
     required this.posY,
     required this.width,
@@ -136,6 +146,7 @@ class ExportJobPayload {
   final Map<String, RasterizedBitmapDto?> preRasterizedLatex;
   final Map<String, RasterizedBitmapDto?> preRasterizedFallbacks;
   final Map<String, Uint8List> optimizedImages;
+  final bool embedEditableData;
 
   const ExportJobPayload({
     required this.baseBytes,
@@ -153,6 +164,7 @@ class ExportJobPayload {
     required this.preRasterizedLatex,
     required this.preRasterizedFallbacks,
     required this.optimizedImages,
+    this.embedEditableData = false,
   });
 }
 

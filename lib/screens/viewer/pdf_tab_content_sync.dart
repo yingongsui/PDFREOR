@@ -2,11 +2,79 @@ part of 'pdf_tab_content.dart';
 
 extension _PdfTabContentSync on PdfTabContentState {
   void _rebuildDocumentRef() {
-    _documentRef = pdfrx.PdfDocumentRefFile(
-      _pdfFile.path,
-      useProgressiveLoading: false,
-      key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
-    );
+    if (_useInMemoryCleanBaseRef && _originalBaseBytes != null) {
+      _documentRef = pdfrx.PdfDocumentRefData(
+        _originalBaseBytes!,
+        sourceName: _pdfFile.path,
+        useProgressiveLoading: false,
+        key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
+      );
+    } else {
+      _documentRef = pdfrx.PdfDocumentRefFile(
+        _pdfFile.path,
+        useProgressiveLoading: false,
+        key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
+      );
+    }
+  }
+
+  Future<void> _beginInitialDocumentOpen() async {
+    final token = ++_initGeneration;
+    try {
+      final results = await Future.wait([
+        EditorSettingsService.loadSettings(),
+        _pdfFile.readAsBytes(),
+      ]);
+      if (!mounted || token != _initGeneration) return;
+
+      final settings = results[0] as EditorSettings;
+      final fileBytes = results[1] as Uint8List;
+      final mode = settings.annotationPersistenceMode;
+
+      final inspected = mode == AnnotationPersistenceMode.alwaysFlattened
+          ? null
+          : await PdfExportService.inspectPdfDocument(
+              fileBytes,
+              prepareCleanBaseForEditable: true,
+            );
+      if (!mounted || token != _initGeneration) return;
+
+      final bool editableMode;
+      switch (mode) {
+        case AnnotationPersistenceMode.fileDefault:
+          editableMode = inspected?.hasEditablePayload ?? false;
+          break;
+        case AnnotationPersistenceMode.alwaysEditable:
+          editableMode = true;
+          break;
+        case AnnotationPersistenceMode.alwaysFlattened:
+          editableMode = false;
+          break;
+      }
+
+      _sessionEditableMode = editableMode;
+      final hasRestorableBase =
+          editableMode &&
+          inspected != null &&
+          inspected.hasEditablePayload &&
+          inspected.cleanBaseBytes != null;
+      _useInMemoryCleanBaseRef = hasRestorableBase;
+      _originalBaseBytes = hasRestorableBase ? inspected.cleanBaseBytes : fileBytes;
+      _pendingRestoredBundle = editableMode ? inspected?.bundle : null;
+
+      _rebuildDocumentRef();
+      _startLoadingWatchdog();
+      _refresh(() {
+        _errorMessage = null;
+        _isLoading = true;
+      });
+    } catch (e) {
+      if (!mounted || token != _initGeneration) return;
+      _refresh(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to open PDF file: $e';
+      });
+    }
   }
 
   void _startLoadingWatchdog() {
@@ -332,6 +400,25 @@ extension _PdfTabContentSync on PdfTabContentState {
     _pdfPageSizes = document.pages
         .map((p) => Size(p.width, p.height))
         .toList(growable: false);
+
+    final pendingRestore = _pendingRestoredBundle;
+    _pendingRestoredBundle = null;
+    if (pendingRestore != null &&
+        _sessionEditableMode &&
+        pendingRestore.pageCount == totalPages) {
+      final restored = pendingRestore.toModelLists(
+        _pageDocBounds,
+        _pdfPageSizes,
+      );
+      _drawingController.restorePersistedAnnotations(
+        strokes: restored.strokes,
+        shapes: restored.shapes,
+        textBoxes: restored.textBoxes,
+        images: restored.images,
+        textAnnotations: restored.textAnnotations,
+      );
+      _notifyDirtyIfChanged();
+    }
     _lastReportedZoom = controller.currentZoom;
     _isDocumentLoaded = true;
     final actualPage = controller.pageNumber ?? targetPage;
@@ -396,21 +483,17 @@ extension _PdfTabContentSync on PdfTabContentState {
 
     if (link.url != null) {
       final urlString = link.url.toString();
+      Future<void> copyFallback() async {
+        await Clipboard.setData(ClipboardData(text: urlString));
+        _showViewerSnackBar('Link copied to clipboard');
+      }
       try {
         final success = await PdfTabContentState._stylusChannel.invokeMethod<bool>('openUrl', {'url': urlString});
         if (success != true) {
-          await Clipboard.setData(ClipboardData(text: urlString));
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Link copied to clipboard')),
-          );
+          await copyFallback();
         }
       } catch (_) {
-        await Clipboard.setData(ClipboardData(text: urlString));
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Link copied to clipboard')),
-        );
+        await copyFallback();
       }
       return;
     }

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/gestures.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
@@ -10,6 +10,7 @@ import 'package:pdfrx/pdfrx.dart' as pdfrx;
 import '../../controllers/drawing_controller.dart';
 import '../../models/editor_models.dart';
 import '../../models/pdf_file_info.dart';
+import '../../services/annotation_persistence_codec.dart';
 import '../../services/editor_settings_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/pdf_system_font_service.dart';
@@ -117,8 +118,12 @@ class PdfTabContentState extends State<PdfTabContent> {
   Duration? _edgeTapDownTime;
   late DrawingController _drawingController;
   late File _pdfFile;
-  late pdfrx.PdfDocumentRefFile _documentRef;
+  pdfrx.PdfDocumentRef? _documentRef;
   int _reloadGeneration = 0;
+  int _initGeneration = 0;
+  bool _sessionEditableMode = false;
+  bool _useInMemoryCleanBaseRef = false;
+  PersistedAnnotationsBundle? _pendingRestoredBundle;
 
   double? _baseNormalizedWidth;
   double _docToCanvasScale = 1.0;
@@ -260,12 +265,11 @@ class PdfTabContentState extends State<PdfTabContent> {
   void initState() {
     super.initState();
     _pdfFile = File(widget.file.path);
-    _rebuildDocumentRef();
     if (!_pdfFile.existsSync()) {
       _errorMessage = 'File does not exist: ${widget.file.path}';
       _isLoading = false;
     } else {
-      _startLoadingWatchdog();
+      _beginInitialDocumentOpen();
     }
     _pdfViewerController = pdfrx.PdfViewerController();
     _transformationController = TransformationController();
@@ -299,7 +303,14 @@ class PdfTabContentState extends State<PdfTabContent> {
       _pdfFile = File(widget.file.path);
       _reloadGeneration++;
       _baseNormalizedWidth = null;
-      _rebuildDocumentRef();
+      _originalBaseBytes = null;
+      _pendingRestoredBundle = null;
+      _useInMemoryCleanBaseRef = false;
+      _documentRef = null;
+      _isDocumentLoaded = false;
+      _errorMessage = null;
+      _isLoading = true;
+      _beginInitialDocumentOpen();
     }
     if (!oldWidget.initialStylusConnected && widget.initialStylusConnected) {
       _onStylusDetected();

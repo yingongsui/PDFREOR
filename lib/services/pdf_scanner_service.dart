@@ -126,10 +126,6 @@ class PdfScannerService {
     await _saveLibrary();
   }
 
-  Future<void> removeImportedFilePath(String path) async {
-    await removeImportedFilePaths([path]);
-  }
-
   Future<void> removeImportedFilePaths(Iterable<String> paths) async {
     await _ensureLibraryLoaded();
     bool changed = false;
@@ -259,40 +255,27 @@ class PdfScannerService {
   }
 
   /// Scan storage for PDF files in a background isolate so UI stays 60/120fps smooth.
-  Future<List<PdfFileInfo>> scanStorage({
-    void Function(String currentFolder, int foundCount)? progressCallback,
-  }) async {
+  Future<List<PdfFileInfo>> scanStorage() async {
     final directoriesToScan = await _getStorageDirectoriesToScan();
     await _ensureLibraryLoaded();
 
     final rootPaths = directoriesToScan.map((d) => d.path).toList();
     final importedSnapshot = _importedFilePaths.toList();
 
-    progressCallback?.call('Scanning storage...', 0);
-
-    final resultList = await Isolate.run(
+    return Isolate.run(
       () => _scanPathsInBackground(rootPaths, importedSnapshot),
     );
-
-    progressCallback?.call('Completed', resultList.length);
-    return resultList;
   }
 
   /// Scan a specific user-selected directory in a background isolate.
-  Future<List<PdfFileInfo>> scanCustomDirectory(
-    String directoryPath, {
-    void Function(String currentFolder, int foundCount)? progressCallback,
-  }) async {
+  Future<List<PdfFileInfo>> scanCustomDirectory(String directoryPath) async {
     await addCustomFolder(directoryPath);
     final dir = Directory(directoryPath);
     if (!await dir.exists()) return [];
 
-    progressCallback?.call(directoryPath, 0);
-    final resultList = await Isolate.run(
+    return Isolate.run(
       () => _scanPathsInBackground([directoryPath], const []),
     );
-    progressCallback?.call(directoryPath, resultList.length);
-    return resultList;
   }
 
   /// Let user manually pick one or more PDF files via system file picker.

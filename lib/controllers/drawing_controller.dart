@@ -131,6 +131,20 @@ class DrawingController extends ChangeNotifier {
   List<DrawnImage> get images => _imagesView;
   List<DrawnTextAnnotation> get textAnnotations => _textAnnotationsView;
 
+  T? _findById<T>(List<T> items, String? id, String Function(T) idOf) {
+    if (id == null) return null;
+    for (final item in items) {
+      if (idOf(item) == id) return item;
+    }
+    return null;
+  }
+
+  DrawingStroke? findStrokeById(String? id) => _findById(_strokes, id, (s) => s.id);
+  DrawnShape? findShapeById(String? id) => _findById(_shapes, id, (s) => s.id);
+  DrawnTextBox? findTextBoxById(String? id) => _findById(_textBoxes, id, (t) => t.id);
+  DrawnTextAnnotation? findTextAnnotationById(String? id) =>
+      _findById(_textAnnotations, id, (ta) => ta.id);
+
   List<StrokePoint>? get activeStrokePoints => _activeStrokePoints;
   Offset? get activeShapeStart => _activeShapeStart;
   Offset? get activeShapeEnd => _activeShapeEnd;
@@ -699,6 +713,38 @@ class DrawingController extends ChangeNotifier {
     _activeShapeEnd = null;
     _isDirty = false;
     _hasSavedBaseline = false;
+    _notifyBothLayers();
+  }
+
+  /// Replaces current in-memory annotations with restored Advanced models cleanly.
+  void restorePersistedAnnotations({
+    required List<DrawingStroke> strokes,
+    required List<DrawnShape> shapes,
+    required List<DrawnTextBox> textBoxes,
+    required List<DrawnImage> images,
+    required List<DrawnTextAnnotation> textAnnotations,
+  }) {
+    _strokes
+      ..clear()
+      ..addAll(strokes);
+    _shapes
+      ..clear()
+      ..addAll(shapes);
+    _textBoxes
+      ..clear()
+      ..addAll(textBoxes);
+    _images
+      ..clear()
+      ..addAll(images);
+    _textAnnotations
+      ..clear()
+      ..addAll(textAnnotations);
+    _undoHistory.clear();
+    _activeStrokePoints = null;
+    _activeShapeStart = null;
+    _activeShapeEnd = null;
+    _isDirty = false;
+    _hasSavedBaseline = hasAnnotations;
     _notifyBothLayers();
   }
 }

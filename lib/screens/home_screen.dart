@@ -18,8 +18,6 @@ import 'home/home_sort_sheet.dart';
 import 'pdf_viewer_screen.dart';
 import 'settings_screen.dart';
 
-export 'home/home_models.dart';
-
 part 'home/home_screen_actions.dart';
 part 'home/home_screen_appbar.dart';
 part 'home/home_screen_views.dart';
