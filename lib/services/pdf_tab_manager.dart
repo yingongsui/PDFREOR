@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/pdf_file_info.dart';
-import 'pdf_export_service.dart';
+import 'atomic_file_store.dart';
 import 'reading_progress_service.dart';
 
 /// Global manager for open PDF document tabs across the app with persistence.
@@ -17,7 +17,8 @@ class PdfTabManager extends ChangeNotifier {
   final List<PdfFileInfo> _openTabs = [];
   late final UnmodifiableListView<PdfFileInfo> _openTabsView = UnmodifiableListView(_openTabs);
   int _activeIndex = 0;
-  bool _initialized = false;
+  Future<void>? _initFuture;
+  bool _mutatedSinceStart = false;
 
   List<PdfFileInfo> get openTabs => _openTabsView;
   int get activeIndex => _activeIndex;
@@ -38,9 +39,11 @@ class PdfTabManager extends ChangeNotifier {
   }
 
   /// Initialize and load persisted tabs from disk.
-  Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> init() {
+    return _initFuture ??= _loadTabsFromDisk();
+  }
+
+  Future<void> _loadTabsFromDisk() async {
     try {
       final file = await _getFile();
       if (await file.exists()) {
@@ -53,7 +56,7 @@ class PdfTabManager extends ChangeNotifier {
         for (final item in rawList) {
           if (item is Map<String, dynamic>) {
             final filePath = item['path'] as String? ?? '';
-            if (filePath.isNotEmpty && File(filePath).existsSync()) {
+            if (filePath.isNotEmpty && await File(filePath).exists()) {
               restored.add(PdfFileInfo(
                 path: filePath,
                 name: item['name'] as String? ?? 'document.pdf',
@@ -67,9 +70,18 @@ class PdfTabManager extends ChangeNotifier {
         }
 
         if (restored.isNotEmpty) {
-          _openTabs.clear();
-          _openTabs.addAll(restored);
-          _activeIndex = savedIndex.clamp(0, _openTabs.length - 1);
+          if (!_mutatedSinceStart && _openTabs.isEmpty) {
+            _openTabs.addAll(restored);
+            _activeIndex = savedIndex.clamp(0, _openTabs.length - 1);
+          } else {
+            // Merge any restored tabs that aren't already open without clobbering active tab
+            final existingPaths = _openTabs.map((t) => t.path).toSet();
+            final missing = restored.where((t) => !existingPaths.contains(t.path)).toList();
+            if (missing.isNotEmpty) {
+              _openTabs.insertAll(0, missing);
+              _activeIndex += missing.length;
+            }
+          }
           notifyListeners();
         }
       }
@@ -92,13 +104,14 @@ class PdfTabManager extends ChangeNotifier {
                 })
             .toList(),
       };
-      await PdfExportService.atomicWriteString(file, jsonEncode(data));
+      await AtomicFileStore.writeString(file, jsonEncode(data));
     } catch (e) {
       debugPrint('Error persisting open tabs: $e');
     }
   }
 
   void openTab(PdfFileInfo file) {
+    _mutatedSinceStart = true;
     final existingIdx = _openTabs.indexWhere((t) => t.path == file.path);
     if (existingIdx != -1) {
       _activeIndex = existingIdx;
@@ -112,6 +125,7 @@ class PdfTabManager extends ChangeNotifier {
 
   void openMultipleTabs(List<PdfFileInfo> files, {String? activePath}) {
     if (files.isEmpty) return;
+    _mutatedSinceStart = true;
     for (final file in files) {
       final existingIdx = _openTabs.indexWhere((t) => t.path == file.path);
       if (existingIdx == -1) {
@@ -136,6 +150,7 @@ class PdfTabManager extends ChangeNotifier {
   }
 
   void closeTab(int index) {
+    _mutatedSinceStart = true;
     if (index >= 0 && index < _openTabs.length) {
       _openTabs.removeAt(index);
       if (_activeIndex >= _openTabs.length) {
@@ -154,6 +169,7 @@ class PdfTabManager extends ChangeNotifier {
   }
 
   void renameTab(String oldPath, PdfFileInfo newFile) {
+    _mutatedSinceStart = true;
     ReadingProgressService.instance.renamePath(oldPath, newFile.path);
     final idx = _openTabs.indexWhere((t) => t.path == oldPath);
     if (idx != -1) {

@@ -164,6 +164,10 @@ void main() {
     controller.updateShape(const Offset(250, 470));
     controller.endShape(ShapeType.rectangle, Colors.blue, 2.5, 2);
 
+    controller.startShape(const Offset(120, 480));
+    controller.updateShape(const Offset(250, 540));
+    controller.endShape(ShapeType.roundedRectangle, Colors.green, 2.5, 2);
+
     controller.addTextAnnotation(DrawnTextAnnotation(
       type: TextAnnotationType.highlight,
       rects: const [Rect.fromLTWH(115, 320, 140, 16)],

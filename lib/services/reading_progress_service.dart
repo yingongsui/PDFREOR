@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'pdf_export_service.dart';
+import '../services/atomic_file_store.dart';
 
 /// Persists and restores the last visited 1-based page number per PDF file path.
 class ReadingProgressService {
@@ -21,7 +21,7 @@ class ReadingProgressService {
   final LinkedHashMap<String, int> _pageByPath = LinkedHashMap<String, int>();
   final LinkedHashMap<String, double> _zoomByPath = LinkedHashMap<String, double>();
   Directory? _storageDirOverride;
-  bool _initialized = false;
+  Future<void>? _initFuture;
   bool _dirty = false;
   Timer? _debounceTimer;
   Future<void> _writeQueue = Future.value();
@@ -32,13 +32,14 @@ class ReadingProgressService {
   }
 
   /// Loads persisted reading progress from disk.
-  Future<void> init({Directory? storageDirOverride}) async {
+  Future<void> init({Directory? storageDirOverride}) {
     if (storageDirOverride != null) {
       _storageDirOverride = storageDirOverride;
     }
-    if (_initialized) return;
-    _initialized = true;
+    return _initFuture ??= _loadFromDisk();
+  }
 
+  Future<void> _loadFromDisk() async {
     try {
       final file = await _getFile();
       if (await file.exists()) {
@@ -47,10 +48,11 @@ class ReadingProgressService {
         if (decoded is Map<String, dynamic>) {
           final rawPages = decoded['pages'];
           if (rawPages is Map<String, dynamic>) {
-            _pageByPath.clear();
             for (final entry in rawPages.entries) {
               final page = (entry.value as num?)?.toInt() ?? 1;
-              if (entry.key.isNotEmpty && page > 1) {
+              if (entry.key.isNotEmpty &&
+                  page > 1 &&
+                  !_pageByPath.containsKey(entry.key)) {
                 _pageByPath[entry.key] = page;
               }
             }
@@ -60,10 +62,13 @@ class ReadingProgressService {
           }
           final rawZooms = decoded['zooms'];
           if (rawZooms is Map<String, dynamic>) {
-            _zoomByPath.clear();
             for (final entry in rawZooms.entries) {
               final zoom = (entry.value as num?)?.toDouble();
-              if (entry.key.isNotEmpty && zoom != null && zoom > 0.05 && zoom < 50.0) {
+              if (entry.key.isNotEmpty &&
+                  zoom != null &&
+                  zoom > 0.05 &&
+                  zoom < 50.0 &&
+                  !_zoomByPath.containsKey(entry.key)) {
                 _zoomByPath[entry.key] = zoom;
               }
             }
@@ -81,8 +86,10 @@ class ReadingProgressService {
   /// Returns the last visited 1-based page number for [filePath], defaulting to 1.
   int getLastPage(String filePath) {
     if (filePath.isEmpty) return 1;
-    final page = _pageByPath[filePath];
-    if (page == null || page <= 1) return 1;
+    final page = _pageByPath.remove(filePath);
+    if (page == null) return 1;
+    _pageByPath[filePath] = page;
+    if (page <= 1) return 1;
     return page;
   }
 
@@ -117,7 +124,11 @@ class ReadingProgressService {
   /// Returns the last recorded zoom level for [filePath], or null if unset.
   double? getLastZoom(String filePath) {
     if (filePath.isEmpty) return null;
-    return _zoomByPath[filePath];
+    final zoom = _zoomByPath.remove(filePath);
+    if (zoom != null) {
+      _zoomByPath[filePath] = zoom;
+    }
+    return zoom;
   }
 
   /// Records [zoom] level for [filePath].
@@ -184,10 +195,10 @@ class ReadingProgressService {
     _debounceTimer?.cancel();
     _debounceTimer = null;
     if (!_dirty) return _writeQueue;
-    _dirty = false;
 
     final pagesSnapshot = Map<String, int>.from(_pageByPath);
     final zoomsSnapshot = Map<String, double>.from(_zoomByPath);
+    _dirty = false;
     _writeQueue = _writeQueue.then((_) async {
       try {
         final file = await _getFile();
@@ -195,8 +206,9 @@ class ReadingProgressService {
           'pages': pagesSnapshot,
           'zooms': zoomsSnapshot,
         });
-        await PdfExportService.atomicWriteString(file, payload);
+        await AtomicFileStore.writeString(file, payload);
       } catch (e) {
+        _dirty = true;
         debugPrint('Error persisting reading progress: $e');
       }
     });

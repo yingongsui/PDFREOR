@@ -1,232 +1,16 @@
-import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/editor_models.dart';
 import '../services/editor_settings_service.dart';
+import 'canvas/editor_canvas_painters.dart';
+import 'canvas/stylus_drawing_gesture_recognizer.dart';
 import 'pdf_canvas_items.dart';
 
+export 'canvas/stylus_drawing_gesture_recognizer.dart'
+    show StylusDrawingGestureRecognizer;
 export 'pdf_canvas_items.dart'
     show kEditableElementRegionGroup, DocumentStack, RenderDocumentStack;
-
-class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
-  bool stylusOnly;
-  bool isDrawingMode;
-  EditorTool activeTool;
-  ShapeType activeShape;
-  Color activeColor;
-  double activeStrokeWidth;
-  int currentPage;
-  int Function()? currentPageGetter;
-  DrawingController controller;
-  TransformationController? transformationController;
-  bool isHardwareButtonPressed;
-  ShapeType? oneShotShape;
-  VoidCallback? onOneShotShapeCompleted;
-  VoidCallback? onStylusDetected;
-  VoidCallback? onStylusDrawStarted;
-  VoidCallback? onShapeCompleted;
-  String? selectedShapeId;
-
-  StylusDrawingGestureRecognizer({
-    required this.stylusOnly,
-    required this.isDrawingMode,
-    required this.activeTool,
-    required this.activeShape,
-    required this.activeColor,
-    required this.activeStrokeWidth,
-    required this.currentPage,
-    this.currentPageGetter,
-    required this.controller,
-    this.transformationController,
-    this.isHardwareButtonPressed = false,
-    this.oneShotShape,
-    this.onOneShotShapeCompleted,
-    this.onStylusDetected,
-    this.onStylusDrawStarted,
-    this.onShapeCompleted,
-    this.selectedShapeId,
-  });
-
-  void update({
-    required bool stylusOnly,
-    required bool isDrawingMode,
-    required EditorTool activeTool,
-    required ShapeType activeShape,
-    required Color activeColor,
-    required double activeStrokeWidth,
-    required int currentPage,
-    int Function()? currentPageGetter,
-    required DrawingController controller,
-    TransformationController? transformationController,
-    bool isHardwareButtonPressed = false,
-    ShapeType? oneShotShape,
-    VoidCallback? onOneShotShapeCompleted,
-    VoidCallback? onStylusDetected,
-    VoidCallback? onStylusDrawStarted,
-    VoidCallback? onShapeCompleted,
-    String? selectedShapeId,
-  }) {
-    this.stylusOnly = stylusOnly;
-    this.isDrawingMode = isDrawingMode;
-    this.activeTool = activeTool;
-    this.activeShape = activeShape;
-    this.activeColor = activeColor;
-    this.activeStrokeWidth = activeStrokeWidth;
-    this.currentPage = currentPage;
-    this.currentPageGetter = currentPageGetter;
-    this.controller = controller;
-    this.transformationController = transformationController;
-    this.isHardwareButtonPressed = isHardwareButtonPressed;
-    this.oneShotShape = oneShotShape;
-    this.onOneShotShapeCompleted = onOneShotShapeCompleted;
-    this.onStylusDetected = onStylusDetected;
-    this.onStylusDrawStarted = onStylusDrawStarted;
-    this.onShapeCompleted = onShapeCompleted;
-    this.selectedShapeId = selectedShapeId;
-  }
-
-  bool _isStylus(PointerEvent event) {
-    return event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus;
-  }
-
-  bool _isEraserActive(PointerEvent event) {
-    if (activeTool == EditorTool.eraser) return true;
-    if (isHardwareButtonPressed) return true;
-    if ((event.buttons & kPrimaryStylusButton != 0) ||
-        (event.buttons & kSecondaryStylusButton != 0) ||
-        (event.buttons & kSecondaryMouseButton != 0)) {
-      return true;
-    }
-    return false;
-  }
-
-  Offset _getDocPoint(Offset screenPoint) {
-    if (transformationController != null) {
-      return transformationController!.toScene(screenPoint);
-    }
-    return screenPoint;
-  }
-
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    final isStylus = _isStylus(event);
-    if (isStylus) {
-      onStylusDetected?.call();
-    }
-
-    final isOneShot = oneShotShape != null;
-    final docPos = _getDocPoint(event.localPosition);
-
-    if (isOneShot) {
-      startTrackingPointer(event.pointer, event.transform);
-      resolve(GestureDisposition.accepted);
-      controller.startShape(docPos);
-      return;
-    }
-
-    if (selectedShapeId != null) {
-      final selectedShape = controller.shapes.cast<DrawnShape?>().firstWhere(
-        (s) => s?.id == selectedShapeId,
-        orElse: () => null,
-      );
-      if (selectedShape != null) {
-        final minX = math.min(selectedShape.start.dx, selectedShape.end.dx) - 48.0;
-        final maxX = math.max(selectedShape.start.dx, selectedShape.end.dx) + 48.0;
-        final minY = math.min(selectedShape.start.dy, selectedShape.end.dy) - 48.0;
-        final maxY = math.max(selectedShape.start.dy, selectedShape.end.dy) + 48.0;
-        final bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
-        if (bounds.contains(docPos)) {
-          if (!isStylus) {
-            return;
-          }
-        }
-      }
-    }
-
-    if (isStylus) {
-      onStylusDetected?.call();
-    } else {
-      if (activeTool == EditorTool.select) {
-        return;
-      }
-    }
-
-    if (stylusOnly) {
-      if (!isStylus) {
-        return;
-      }
-    } else {
-      if (!isDrawingMode && !isStylus) {
-        return;
-      }
-    }
-
-    startTrackingPointer(event.pointer, event.transform);
-    resolve(GestureDisposition.accepted);
-
-    final isEraser = _isEraserActive(event);
-
-    if (isEraser) {
-      controller.eraseAt(docPos);
-    } else if (activeTool == EditorTool.shape) {
-      controller.startShape(docPos);
-    } else {
-      if (activeTool != EditorTool.pen) {
-        onStylusDrawStarted?.call();
-      }
-      controller.startStroke(docPos, event.pressure);
-    }
-  }
-
-  @override
-  void handleEvent(PointerEvent event) {
-    final docPos = _getDocPoint(event.localPosition);
-    final isEraser = _isEraserActive(event);
-    final isOneShot = oneShotShape != null;
-
-    if (event is PointerMoveEvent) {
-      if (isEraser && !isOneShot) {
-        if (controller.activeStrokePoints != null) {
-          controller.cancelActiveStroke();
-        }
-        controller.eraseAt(docPos);
-      } else if (isOneShot || activeTool == EditorTool.shape) {
-        controller.updateShape(docPos);
-      } else {
-        controller.addStrokePoint(docPos, event.pressure);
-      }
-    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
-      final page = currentPageGetter?.call() ?? currentPage;
-      if (isEraser && !isOneShot) {
-        controller.cancelActiveStroke();
-      } else if (isOneShot) {
-        controller.endShape(oneShotShape!, activeColor, activeStrokeWidth, page);
-        onOneShotShapeCompleted?.call();
-      } else if (activeTool == EditorTool.shape) {
-        final distance = (controller.activeShapeEnd != null && controller.activeShapeStart != null)
-            ? (controller.activeShapeEnd! - controller.activeShapeStart!).distance
-            : 0.0;
-        if (distance <= 5) {
-          controller.startShape(docPos - const Offset(50, 30));
-          controller.updateShape(docPos + const Offset(50, 30));
-        }
-        controller.endShape(activeShape, activeColor, activeStrokeWidth, page);
-        onShapeCompleted?.call();
-      } else {
-        controller.endStroke(activeColor, activeStrokeWidth, page);
-      }
-      stopTrackingPointer(event.pointer);
-    }
-  }
-
-  @override
-  String get debugDescription => 'stylusDrawing';
-
-  @override
-  void didStopTrackingLastPointer(int pointer) {}
-}
 
 class PdfEditorCanvas extends StatefulWidget {
   final DrawingController controller;
@@ -301,11 +85,17 @@ class PdfEditorCanvas extends StatefulWidget {
 class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   late Listenable _savedPaintListenable;
   late Listenable _activePaintListenable;
+  final SavedLayerPictureCache _pictureCache = SavedLayerPictureCache();
 
   @override
   void initState() {
     super.initState();
+    widget.controller.savedLayerListenable.addListener(_onSavedLayerChanged);
     _rebuildPaintListenables();
+  }
+
+  void _onSavedLayerChanged() {
+    _pictureCache.invalidate();
   }
 
   void _rebuildPaintListenables() {
@@ -380,22 +170,18 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
           (s) => s?.id == _selectedShapeId,
           orElse: () => null,
         );
-        if (selectedShape != null) {
-          final minX = math.min(selectedShape.start.dx, selectedShape.end.dx) - 48.0;
-          final maxX = math.max(selectedShape.start.dx, selectedShape.end.dx) + 48.0;
-          final minY = math.min(selectedShape.start.dy, selectedShape.end.dy) - 48.0;
-          final maxY = math.max(selectedShape.start.dy, selectedShape.end.dy) + 48.0;
-          final bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
-          if (!bounds.contains(docPos)) {
-            final otherShape = widget.controller.hitTestShape(docPos, 24.0);
-            _setSelectedShape(otherShape?.id);
-            if (otherShape != null) {
-              _setSelectedStroke(null);
-              return;
-            }
-          } else {
-            return;
-          }
+        if (selectedShape != null && paddedShapeBounds(selectedShape).contains(docPos)) {
+          return;
+        }
+      }
+
+      if (_selectedStrokeId != null) {
+        final selectedStroke = widget.controller.strokes.cast<DrawingStroke?>().firstWhere(
+          (s) => s?.id == _selectedStrokeId,
+          orElse: () => null,
+        );
+        if (selectedStroke != null && paddedStrokeBounds(selectedStroke).contains(docPos)) {
+          return;
         }
       }
 
@@ -403,6 +189,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       if (hitShape != null) {
         _setSelectedShape(hitShape.id);
         _setSelectedStroke(null);
+        _setSelectedTextAnnotation(null);
         return;
       }
 
@@ -468,6 +255,11 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   @override
   void didUpdateWidget(covariant PdfEditorCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller.savedLayerListenable.removeListener(_onSavedLayerChanged);
+      widget.controller.savedLayerListenable.addListener(_onSavedLayerChanged);
+      _pictureCache.invalidate();
+    }
     if (widget.controller != oldWidget.controller ||
         widget.transformationController != oldWidget.transformationController) {
       _rebuildPaintListenables();
@@ -475,23 +267,39 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   }
 
   @override
+  void dispose() {
+    widget.controller.savedLayerListenable.removeListener(_onSavedLayerChanged);
+    _pictureCache.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final selectedStroke = _selectedStrokeId == null
+        ? null
+        : widget.controller.strokes.cast<DrawingStroke?>().firstWhere(
+            (s) => s?.id == _selectedStrokeId,
+            orElse: () => null,
+          );
+
     final hasWidgetAnnotations = widget.controller.shapes.isNotEmpty ||
         widget.controller.images.isNotEmpty ||
-        widget.controller.textBoxes.isNotEmpty;
+        widget.controller.textBoxes.isNotEmpty ||
+        selectedStroke != null;
 
     Widget content = Stack(
       fit: StackFit.expand,
       children: [
-        // 1a. Committed strokes & text annotations rendered in viewport space with frustum culling
+        // 1a. Committed strokes & text annotations cached as per-page Pictures with frustum culling
         Positioned.fill(
           child: IgnorePointer(
             child: RepaintBoundary(
               child: CustomPaint(
                 isComplex: true,
-                painter: _SavedAnnotationsPainter(
+                painter: SavedAnnotationsPainter(
                   repaint: _savedPaintListenable,
                   controller: widget.controller,
+                  pictureCache: _pictureCache,
                   transformationController: widget.transformationController,
                   selectedStrokeId: _selectedStrokeId,
                   selectedTextAnnotationId: _selectedTextAnnotationId,
@@ -505,7 +313,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
           child: IgnorePointer(
             child: RepaintBoundary(
               child: CustomPaint(
-                painter: _ActiveAnnotationPainter(
+                painter: ActiveAnnotationPainter(
                   repaint: _activePaintListenable,
                   controller: widget.controller,
                   transformationController: widget.transformationController,
@@ -517,7 +325,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
             ),
           ),
         ),
-        // 2-4. Interactive widget annotations (mounted only when present to avoid scroll rebuilds)
+        // 2-4. Interactive widget annotations
         if (hasWidgetAnnotations)
           AnimatedBuilder(
             animation: widget.transformationController ?? const AlwaysStoppedAnimation(null),
@@ -533,6 +341,13 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               fit: StackFit.expand,
               clipBehavior: Clip.none,
               children: [
+                if (selectedStroke != null)
+                  Positioned.fill(
+                    child: ListenableBuilder(
+                      listenable: widget.controller.savedLayerListenable,
+                      builder: (context, _) => _buildSelectedStrokeOverlay(selectedStroke),
+                    ),
+                  ),
                 for (final shape in widget.controller.shapes)
                   _buildShapeWidget(shape),
                 for (final img in widget.controller.images)
@@ -594,8 +409,8 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         if (widget.oneShotShape != null)
           Positioned(
             top: 12,
-            left: 0,
-            right: 0,
+            left: 16,
+            right: 16,
             child: Center(
               child: Material(
                 elevation: 6,
@@ -612,12 +427,16 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Drag with finger to draw ${widget.oneShotShape!.label}',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                      Flexible(
+                        child: Text(
+                          'Drag with finger to draw ${widget.oneShotShape!.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -640,18 +459,25 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
     if ((widget.activeTool == EditorTool.textBox || widget.activeTool == EditorTool.latexBox) &&
         widget.oneShotShape == null) {
-      return GestureDetector(
+      return Listener(
         behavior: HitTestBehavior.translucent,
-        onTapDown: (details) {
-          final docPos = widget.transformationController?.toScene(details.localPosition) ??
-              details.localPosition;
-          if (widget.activeTool == EditorTool.latexBox) {
-            widget.onAddLatexBoxRequested?.call(docPos);
-          } else {
-            widget.onAddTextBoxRequested(docPos);
-          }
-        },
-        child: content,
+        onPointerHover: _checkPointer,
+        onPointerDown: _checkPointer,
+        onPointerUp: _handlePointerUp,
+        onPointerCancel: _handlePointerCancel,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (details) {
+            final docPos = widget.transformationController?.toScene(details.localPosition) ??
+                details.localPosition;
+            if (widget.activeTool == EditorTool.latexBox) {
+              widget.onAddLatexBoxRequested?.call(docPos);
+            } else {
+              widget.onAddTextBoxRequested(docPos);
+            }
+          },
+          child: content,
+        ),
       );
     }
 
@@ -685,6 +511,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               onStylusDrawStarted: widget.onStylusDrawStarted,
               onShapeCompleted: widget.onShapeCompleted,
               selectedShapeId: _selectedShapeId,
+              selectedStrokeId: _selectedStrokeId,
             ),
             (instance) {
               instance.update(
@@ -705,6 +532,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                 onStylusDrawStarted: widget.onStylusDrawStarted,
                 onShapeCompleted: widget.onShapeCompleted,
                 selectedShapeId: _selectedShapeId,
+                selectedStrokeId: _selectedStrokeId,
               );
             },
           ),
@@ -715,20 +543,14 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   }
 
   Widget _buildShapeWidget(DrawnShape shape) {
-    final minX = math.min(shape.start.dx, shape.end.dx);
-    final maxX = math.max(shape.start.dx, shape.end.dx);
-    final minY = math.min(shape.start.dy, shape.end.dy);
-    final maxY = math.max(shape.start.dy, shape.end.dy);
-    final width = maxX - minX;
-    final height = maxY - minY;
-    const kPadding = 48.0;
+    final bounds = paddedShapeBounds(shape);
 
     return Positioned(
       key: ValueKey('shape_${shape.id}'),
-      left: minX - kPadding,
-      top: minY - kPadding,
-      width: width + kPadding * 2,
-      height: height + kPadding * 2,
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
       child: ShapeCanvasItem(
         key: ValueKey('sw_${shape.id}'),
         shape: shape,
@@ -757,253 +579,89 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       ),
     );
   }
+
+  Widget _buildSelectedStrokeOverlay(DrawingStroke stroke) {
+    if (!widget.controller.strokes.contains(stroke) || stroke.points.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final bounds = paddedStrokeBounds(stroke);
+    return DocumentStack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          key: ValueKey('stroke_pos_${stroke.id}'),
+          left: bounds.left,
+          top: bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+          child: _SelectedStrokeDragItem(
+            key: ValueKey('stroke_drag_${stroke.id}'),
+            stroke: stroke,
+            transformationController: widget.transformationController,
+            onMove: (delta) => widget.controller.moveStroke(stroke, delta),
+            onMoveCommitted: (totalDelta) =>
+                widget.controller.recordStrokeMove(stroke, totalDelta),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-void _paintStrokePoints(Canvas canvas, List<StrokePoint> points, Color color, double baseWidth) {
-  if (points.isEmpty) return;
-  if (points.length == 1) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(points.first.offset, baseWidth / 2, paint);
-    return;
-  }
-
-  final paint = Paint()
-    ..color = color
-    ..strokeCap = StrokeCap.round
-    ..strokeJoin = StrokeJoin.round
-    ..style = PaintingStyle.stroke;
-
-  for (int i = 0; i < points.length - 1; i++) {
-    final p1 = points[i];
-    final p2 = points[i + 1];
-    final avgPressure = (p1.pressure + p2.pressure) / 2;
-    final pressureScale = (avgPressure > 0.0 && avgPressure != 1.0)
-        ? (0.75 + 0.5 * avgPressure.clamp(0.0, 1.0))
-        : 1.0;
-    paint.strokeWidth = math.max(0.5, baseWidth * pressureScale);
-    canvas.drawLine(p1.offset, p2.offset, paint);
-  }
-}
-
-class _SavedAnnotationsPainter extends CustomPainter {
-  final DrawingController controller;
+class _SelectedStrokeDragItem extends StatefulWidget {
+  final DrawingStroke stroke;
   final TransformationController? transformationController;
-  final String? selectedStrokeId;
-  final String? selectedTextAnnotationId;
+  final ValueChanged<Offset> onMove;
+  final ValueChanged<Offset> onMoveCommitted;
 
-  _SavedAnnotationsPainter({
-    required super.repaint,
-    required this.controller,
+  const _SelectedStrokeDragItem({
+    super.key,
+    required this.stroke,
     this.transformationController,
-    this.selectedStrokeId,
-    this.selectedTextAnnotationId,
+    required this.onMove,
+    required this.onMoveCommitted,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (controller.strokes.isEmpty && controller.textAnnotations.isEmpty) {
-      return;
-    }
-
-    final tc = transformationController;
-    final Rect visibleDocRect;
-    if (tc != null) {
-      final p1 = tc.toScene(Offset.zero);
-      final p2 = tc.toScene(Offset(size.width, size.height));
-      visibleDocRect = Rect.fromPoints(p1, p2).inflate(48.0);
-      canvas.save();
-      canvas.transform(tc.value.storage);
-    } else {
-      visibleDocRect = (Offset.zero & size).inflate(48.0);
-    }
-
-    for (final ta in controller.textAnnotations) {
-      final isSelected = ta.id == selectedTextAnnotationId;
-      if (!isSelected && !ta.getBounds().overlaps(visibleDocRect)) {
-        continue;
-      }
-      switch (ta.type) {
-        case TextAnnotationType.highlight:
-          final paint = Paint()
-            ..color = ta.color.withValues(alpha: 0.38)
-            ..style = PaintingStyle.fill
-            ..blendMode = BlendMode.multiply;
-          for (final rect in ta.rects) {
-            canvas.drawRect(rect, paint);
-          }
-          if (isSelected) {
-            final selPaint = Paint()
-              ..color = const Color(0xFF1E88E5)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.5;
-            for (final rect in ta.rects) {
-              canvas.drawRect(rect.inflate(1.5), selPaint);
-            }
-          }
-          break;
-        case TextAnnotationType.underline:
-          final paint = Paint()
-            ..color = ta.color
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.0;
-          for (final rect in ta.rects) {
-            canvas.drawLine(rect.bottomLeft, rect.bottomRight, paint);
-          }
-          if (isSelected) {
-            final selPaint = Paint()
-              ..color = const Color(0xFF1E88E5)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.0;
-            for (final rect in ta.rects) {
-              canvas.drawRect(rect.inflate(2.0), selPaint);
-            }
-          }
-          break;
-        case TextAnnotationType.strikethrough:
-          final paint = Paint()
-            ..color = ta.color
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.8;
-          for (final rect in ta.rects) {
-            final midY = (rect.top + rect.bottom) / 2;
-            canvas.drawLine(Offset(rect.left, midY), Offset(rect.right, midY), paint);
-          }
-          if (isSelected) {
-            final selPaint = Paint()
-              ..color = const Color(0xFF1E88E5)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.0;
-            for (final rect in ta.rects) {
-              canvas.drawRect(rect.inflate(2.0), selPaint);
-            }
-          }
-          break;
-      }
-    }
-
-    for (final stroke in controller.strokes) {
-      final isSelected = stroke.id == selectedStrokeId;
-      final pad = stroke.strokeWidth + 12.0;
-      if (!isSelected && !stroke.getBounds().inflate(pad).overlaps(visibleDocRect)) {
-        continue;
-      }
-      if (isSelected) {
-        final glowPaint = Paint()
-          ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = stroke.strokeWidth + 10.0;
-        for (int i = 0; i < stroke.points.length - 1; i++) {
-          canvas.drawLine(stroke.points[i].offset, stroke.points[i + 1].offset, glowPaint);
-        }
-        final bounds = stroke.getBounds().inflate(6.0 + stroke.strokeWidth / 2);
-        final boxPaint = Paint()
-          ..color = const Color(0xFF1E88E5).withValues(alpha: 0.75)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2;
-        canvas.drawRRect(RRect.fromRectAndRadius(bounds, const Radius.circular(8)), boxPaint);
-      }
-      _paintStrokePoints(canvas, stroke.points, stroke.color, stroke.strokeWidth);
-    }
-
-    if (tc != null) {
-      canvas.restore();
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SavedAnnotationsPainter oldDelegate) {
-    return oldDelegate.selectedStrokeId != selectedStrokeId ||
-        oldDelegate.selectedTextAnnotationId != selectedTextAnnotationId ||
-        oldDelegate.transformationController != transformationController ||
-        oldDelegate.controller != controller;
-  }
+  State<_SelectedStrokeDragItem> createState() => _SelectedStrokeDragItemState();
 }
 
-class _ActiveAnnotationPainter extends CustomPainter {
-  final DrawingController controller;
-  final TransformationController? transformationController;
-  final Color currentColor;
-  final double currentStrokeWidth;
-  final ShapeType shapeType;
+class _SelectedStrokeDragItemState extends State<_SelectedStrokeDragItem> {
+  Offset _totalDelta = Offset.zero;
 
-  _ActiveAnnotationPainter({
-    required super.repaint,
-    required this.controller,
-    this.transformationController,
-    required this.currentColor,
-    required this.currentStrokeWidth,
-    required this.shapeType,
-  });
+  double get _currentScale =>
+      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0)
+          .clamp(0.2, 5.0);
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hasStroke = controller.activeStrokePoints != null &&
-        controller.activeStrokePoints!.isNotEmpty;
-    final hasShape = controller.activeShapeStart != null &&
-        controller.activeShapeEnd != null;
-    if (!hasStroke && !hasShape) {
-      return;
-    }
-
-    final tc = transformationController;
-    if (tc != null) {
-      canvas.save();
-      canvas.transform(tc.value.storage);
-    }
-
-    if (hasStroke) {
-      _paintStrokePoints(
-        canvas,
-        controller.activeStrokePoints!,
-        currentColor,
-        currentStrokeWidth,
-      );
-    }
-
-    if (hasShape) {
-      _drawShapePreview(
-        canvas,
-        shapeType,
-        controller.activeShapeStart!,
-        controller.activeShapeEnd!,
-        currentColor,
-        currentStrokeWidth,
-      );
-    }
-
-    if (tc != null) {
-      canvas.restore();
+  void _commitDrag() {
+    if (_totalDelta != Offset.zero) {
+      widget.onMoveCommitted(_totalDelta);
+      _totalDelta = Offset.zero;
     }
   }
 
-  void _drawShapePreview(
-    Canvas canvas,
-    ShapeType type,
-    Offset start,
-    Offset end,
-    Color color,
-    double strokeWidth,
-  ) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    paintShapeOnCanvas(canvas, type, start, end, paint);
-  }
-
   @override
-  bool shouldRepaint(covariant _ActiveAnnotationPainter oldDelegate) {
-    return oldDelegate.currentColor != currentColor ||
-        oldDelegate.currentStrokeWidth != currentStrokeWidth ||
-        oldDelegate.shapeType != shapeType ||
-        oldDelegate.transformationController != transformationController ||
-        oldDelegate.controller != controller;
+  Widget build(BuildContext context) {
+    return TapRegion(
+      groupId: kEditableElementRegionGroup,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.move,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (_) {
+            _totalDelta = Offset.zero;
+          },
+          onPanUpdate: (details) {
+            final docDelta = details.delta / _currentScale;
+            if (docDelta == Offset.zero) return;
+            _totalDelta += docDelta;
+            widget.onMove(docDelta);
+          },
+          onPanEnd: (_) => _commitDrag(),
+          onPanCancel: _commitDrag,
+        ),
+      ),
+    );
   }
 }

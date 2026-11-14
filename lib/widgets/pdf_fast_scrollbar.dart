@@ -145,11 +145,12 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
     _lastObservedDocTop = currentDocTop;
 
     if (prevDocTop != null && (currentDocTop - prevDocTop).abs() > 0.5) {
-      _isVisible = true;
+      if (!_isVisible) {
+        setState(() {
+          _isVisible = true;
+        });
+      }
       _scheduleAutoHide();
-    }
-    if (_isVisible || _isDragging) {
-      setState(() {});
     }
   }
 
@@ -191,33 +192,10 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewportHeight = constraints.maxHeight;
-        final visibleRect = widget.controller.visibleRect;
-        final metrics = PdfFastScrollbar.computeThumbMetrics(
-          viewportHeight: viewportHeight,
-          docHeight: layout.documentSize.height,
-          visibleRect: visibleRect,
-          topPadding: widget.topPadding,
-          bottomPadding: widget.bottomPadding,
-          thumbHitHeight: _thumbHitHeight,
-        );
-        if (metrics == null) {
-          return const SizedBox.shrink();
-        }
-
         final showControls = _isVisible || _isDragging;
         final theme = Theme.of(context);
         final isDark = theme.brightness == Brightness.dark;
         const activeAccent = Color(0xFF1E90FF);
-
-        final probeY = metrics.fraction <= 0.001
-            ? 0.0
-            : (metrics.fraction >= 0.999
-                ? layout.documentSize.height
-                : visibleRect.top + visibleRect.height * 0.35);
-        final displayPage = _isDragging
-            ? PdfFastScrollbar.findPageAtDocumentY(layout.pageLayouts, probeY)
-            : (widget.controller.pageNumber ??
-                PdfFastScrollbar.findPageAtDocumentY(layout.pageLayouts, probeY));
 
         return Stack(
           clipBehavior: Clip.none,
@@ -236,82 +214,128 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
               ),
 
             // Edge-snapped simple scroll thumb displaying only the current page number
-            Positioned(
-              right: 0,
-              top: metrics.thumbTop,
-              child: IgnorePointer(
-                ignoring: !showControls,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _scheduleAutoHide,
-                  onVerticalDragStart: (details) {
-                    _hideTimer?.cancel();
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _isDragging = true;
-                      _isVisible = true;
-                      _dragStartGlobalY = details.globalPosition.dy;
-                      _dragStartThumbTravelY = metrics.fraction * metrics.maxThumbTravel;
-                    });
-                  },
-                  onVerticalDragUpdate: (details) {
-                    final deltaY = details.globalPosition.dy - _dragStartGlobalY;
-                    final nextTravelY =
-                        (_dragStartThumbTravelY + deltaY).clamp(0.0, metrics.maxThumbTravel);
-                    _scrubToFraction(nextTravelY / metrics.maxThumbTravel);
-                  },
-                  onVerticalDragEnd: (_) {
-                    setState(() {
-                      _isDragging = false;
-                    });
-                    _scheduleAutoHide();
-                  },
-                  onVerticalDragCancel: () {
-                    setState(() {
-                      _isDragging = false;
-                    });
-                    _scheduleAutoHide();
-                  },
-                  child: AnimatedOpacity(
-                    opacity: showControls ? 0.96 : 0.0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: _thumbHitHeight,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: _isDragging
-                            ? activeAccent
-                            : (isDark ? const Color(0xDD2D333F) : const Color(0xDD1E2430)),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(14),
-                          bottomLeft: Radius.circular(14),
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                            offset: Offset(-1, 1),
+            AnimatedBuilder(
+              animation: widget.controller,
+              builder: (context, _) {
+                if (!widget.controller.isReady) {
+                  return const SizedBox.shrink();
+                }
+                final currentLayout = widget.controller.layout;
+                final visibleRect = widget.controller.visibleRect;
+                final metrics = PdfFastScrollbar.computeThumbMetrics(
+                  viewportHeight: viewportHeight,
+                  docHeight: currentLayout.documentSize.height,
+                  visibleRect: visibleRect,
+                  topPadding: widget.topPadding,
+                  bottomPadding: widget.bottomPadding,
+                  thumbHitHeight: _thumbHitHeight,
+                );
+                if (metrics == null) {
+                  return const SizedBox.shrink();
+                }
+
+                final probeY = metrics.fraction <= 0.001
+                    ? 0.0
+                    : (metrics.fraction >= 0.999
+                        ? currentLayout.documentSize.height
+                        : visibleRect.top + visibleRect.height * 0.35);
+                final displayPage = _isDragging
+                    ? PdfFastScrollbar.findPageAtDocumentY(
+                        currentLayout.pageLayouts,
+                        probeY,
+                      )
+                    : (widget.controller.pageNumber ??
+                        PdfFastScrollbar.findPageAtDocumentY(
+                          currentLayout.pageLayouts,
+                          probeY,
+                        ));
+
+                return Positioned(
+                  right: 0,
+                  top: metrics.thumbTop,
+                  child: IgnorePointer(
+                    ignoring: !showControls,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _scheduleAutoHide,
+                      onVerticalDragStart: (details) {
+                        _hideTimer?.cancel();
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _isDragging = true;
+                          _isVisible = true;
+                          _dragStartGlobalY = details.globalPosition.dy;
+                          _dragStartThumbTravelY =
+                              metrics.fraction * metrics.maxThumbTravel;
+                        });
+                      },
+                      onVerticalDragUpdate: (details) {
+                        final deltaY =
+                            details.globalPosition.dy - _dragStartGlobalY;
+                        final nextTravelY =
+                            (_dragStartThumbTravelY + deltaY)
+                                .clamp(0.0, metrics.maxThumbTravel);
+                        _scrubToFraction(nextTravelY / metrics.maxThumbTravel);
+                      },
+                      onVerticalDragEnd: (_) {
+                        setState(() {
+                          _isDragging = false;
+                        });
+                        _scheduleAutoHide();
+                      },
+                      onVerticalDragCancel: () {
+                        setState(() {
+                          _isDragging = false;
+                        });
+                        _scheduleAutoHide();
+                      },
+                      child: AnimatedOpacity(
+                        opacity: showControls ? 0.96 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: _thumbHitHeight,
                           ),
-                        ],
-                      ),
-                      child: Text(
-                        '$displayPage',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _isDragging
+                                ? activeAccent
+                                : (isDark
+                                    ? const Color(0xDD2D333F)
+                                    : const Color(0xDD1E2430)),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(14),
+                              bottomLeft: Radius.circular(14),
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 4,
+                                offset: Offset(-1, 1),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            '$displayPage',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ],
         );

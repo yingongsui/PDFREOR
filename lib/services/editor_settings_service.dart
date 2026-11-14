@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/editor_models.dart';
-import 'pdf_export_service.dart';
+import 'atomic_file_store.dart';
 
 enum AppFontFamily {
   sansSerif, // Sans-Serif (Modern / HeiTi / Noto Sans / Helvetica)
@@ -110,6 +110,8 @@ class EditorSettings {
       };
 
   factory EditorSettings.fromJson(Map<String, dynamic> json) {
+    final shapeIdx = (json['activeShape'] as num?)?.toInt();
+    final fontIdx = (json['textBoxFont'] as num?)?.toInt();
     return EditorSettings(
       activeColor: json['activeColor'] != null
           ? Color(json['activeColor'] as int)
@@ -121,16 +123,18 @@ class EditorSettings {
           ? Color(json['underlineColor'] as int)
           : const Color(0xFFF44336),
       activeStrokeWidth: (json['activeStrokeWidth'] as num?)?.toDouble() ?? 3.0,
-      activeShape: json['activeShape'] != null &&
-              (json['activeShape'] as int) < ShapeType.values.length
-          ? ShapeType.values[json['activeShape'] as int]
+      activeShape: shapeIdx != null &&
+              shapeIdx >= 0 &&
+              shapeIdx < ShapeType.values.length
+          ? ShapeType.values[shapeIdx]
           : ShapeType.rectangle,
       toolbarPositionX: (json['toolbarPositionX'] as num?)?.toDouble() ?? 12.0,
       toolbarPositionY: (json['toolbarPositionY'] as num?)?.toDouble() ?? 100.0,
       toolbarCollapsed: (json['toolbarCollapsed'] as bool?) ?? false,
-      textBoxFont: json['textBoxFont'] != null &&
-              (json['textBoxFont'] as int) < AppFontFamily.values.length
-          ? AppFontFamily.values[json['textBoxFont'] as int]
+      textBoxFont: fontIdx != null &&
+              fontIdx >= 0 &&
+              fontIdx < AppFontFamily.values.length
+          ? AppFontFamily.values[fontIdx]
           : AppFontFamily.sansSerif,
       latexQuickOperators: json['latexQuickOperators'] != null
           ? List<String>.from(json['latexQuickOperators'] as List)
@@ -142,6 +146,8 @@ class EditorSettings {
 class EditorSettingsService {
   static const _fileName = 'editor_settings.json';
   static EditorSettings? _cachedSettings;
+  static Future<EditorSettings>? _loadFuture;
+  static int _mutationEpoch = 0;
   static final ValueNotifier<EditorSettings> settingsNotifier =
       ValueNotifier<EditorSettings>(const EditorSettings());
 
@@ -152,17 +158,30 @@ class EditorSettingsService {
 
   static Future<EditorSettings> loadSettings() async {
     if (_cachedSettings != null) return _cachedSettings!;
+    return _loadFuture ??= _loadSettingsFromDisk();
+  }
+
+  static Future<EditorSettings> _loadSettingsFromDisk() async {
+    final epochAtStart = _mutationEpoch;
     try {
       final file = await _getFile();
       if (await file.exists()) {
         final content = await file.readAsString();
         final map = jsonDecode(content) as Map<String, dynamic>;
+        if (_mutationEpoch != epochAtStart && _cachedSettings != null) {
+          return _cachedSettings!;
+        }
         _cachedSettings = EditorSettings.fromJson(map);
         settingsNotifier.value = _cachedSettings!;
         return _cachedSettings!;
       }
     } catch (e) {
       debugPrint('Error loading editor settings: $e');
+    } finally {
+      _loadFuture = null;
+    }
+    if (_mutationEpoch != epochAtStart && _cachedSettings != null) {
+      return _cachedSettings!;
     }
     _cachedSettings = const EditorSettings();
     settingsNotifier.value = _cachedSettings!;
@@ -170,11 +189,12 @@ class EditorSettingsService {
   }
 
   static Future<void> saveSettings(EditorSettings settings) async {
+    _mutationEpoch++;
     _cachedSettings = settings;
     settingsNotifier.value = settings;
     try {
       final file = await _getFile();
-      await PdfExportService.atomicWriteString(file, jsonEncode(settings.toJson()));
+      await AtomicFileStore.writeString(file, jsonEncode(settings.toJson()));
     } catch (e) {
       debugPrint('Error saving editor settings: $e');
     }

@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/pdf_file_info.dart';
-import 'pdf_export_service.dart';
+import 'atomic_file_store.dart';
 
 class PdfScannerService {
   static final PdfScannerService instance = PdfScannerService._internal();
@@ -20,10 +20,13 @@ class PdfScannerService {
   Set<String> _collapsedFolders = {};
   String _folderSort = 'nameAsc';
   String _fileSort = 'dateDesc';
-  bool _libraryLoaded = false;
+  Future<void>? _loadFuture;
 
-  Future<void> _ensureLibraryLoaded() async {
-    if (_libraryLoaded) return;
+  Future<void> _ensureLibraryLoaded() {
+    return _loadFuture ??= _loadLibraryFromDisk();
+  }
+
+  Future<void> _loadLibraryFromDisk() async {
     try {
       final docDir = await getApplicationDocumentsDirectory();
       final file = File('${docDir.path}/$_libraryFileName');
@@ -47,7 +50,6 @@ class PdfScannerService {
         }
       }
     } catch (_) {}
-    _libraryLoaded = true;
   }
 
   Future<void> _saveLibrary() async {
@@ -61,7 +63,7 @@ class PdfScannerService {
         'folderSort': _folderSort,
         'fileSort': _fileSort,
       };
-      await PdfExportService.atomicWriteString(file, jsonEncode(data));
+      await AtomicFileStore.writeString(file, jsonEncode(data));
     } catch (_) {}
   }
 
@@ -238,7 +240,22 @@ class PdfScannerService {
       }
     }
 
-    return directoriesToScan;
+    // Remove redundant child paths when a parent directory is already queued for recursive scan
+    final sep = Platform.pathSeparator;
+    final sortedPaths = directoriesToScan.map((d) => d.path).toList()
+      ..sort((a, b) => a.length.compareTo(b.length));
+    final deduplicated = <Directory>[];
+    for (final candidate in sortedPaths) {
+      final coveredByParent = deduplicated.any((parent) {
+        final pPath = parent.path;
+        return candidate == pPath || candidate.startsWith('$pPath$sep');
+      });
+      if (!coveredByParent) {
+        deduplicated.add(Directory(candidate));
+      }
+    }
+
+    return deduplicated;
   }
 
   /// Scan storage for PDF files in a background isolate so UI stays 60/120fps smooth.
@@ -360,7 +377,9 @@ class PdfScannerService {
             } else if (entity is Directory) {
               bool shouldSkip = false;
               for (final skip in skipFolders) {
-                if (path.endsWith(skip) || path.contains('/$skip/')) {
+                if (basename == skip ||
+                    path.endsWith('$sep$skip') ||
+                    path.contains('$sep$skip$sep')) {
                   shouldSkip = true;
                   break;
                 }

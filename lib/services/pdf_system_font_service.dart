@@ -111,7 +111,6 @@ class AndroidSystemFontResolver implements PdfFontResolver {
     'batang',
     'myungjo',
     'gungsuh',
-    'serif',
   ];
 
   static const List<String> _westernSansKeywords = [
@@ -221,6 +220,9 @@ class AndroidSystemFontResolver implements PdfFontResolver {
 
   bool _prefersCjkSerif(PdfFontQuery query, String normalizedFace) {
     if (query.isRoman || _hasUnicodeCjkSerifHint(query.face)) {
+      return true;
+    }
+    if (normalizedFace.contains('serif') && !normalizedFace.contains('sans')) {
       return true;
     }
     for (final kw in _cjkSerifKeywords) {
@@ -448,7 +450,7 @@ class PdfSystemFontService {
   late final AndroidSystemFontResolver _androidResolver =
       AndroidSystemFontResolver();
   PdfFontManager? _fontManager;
-  bool _initialized = false;
+  Future<void>? _initFuture;
 
   PdfFontManager get fontManager => _fontManager ??= _buildFontManager();
 
@@ -459,10 +461,11 @@ class PdfSystemFontService {
     return PdfFontManager(resolvers: const []);
   }
 
-  Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> init() {
+    return _initFuture ??= _initInternal();
+  }
 
+  Future<void> _initInternal() async {
     if (!Platform.isAndroid) return;
 
     await fontManager.prepare();
@@ -470,21 +473,22 @@ class PdfSystemFontService {
     final sansPath = _androidResolver.primaryCjkSansPath;
     final serifPath = _androidResolver.primaryCjkSerifPath;
 
-    if (sansPath != null) {
-      for (final face in _preseededCjkSansFaces) {
-        await PdfrxEntryFunctions.instance.addFontFile(
-          face: face,
-          filePath: sansPath,
-        );
-      }
-    }
-    if (serifPath != null) {
-      for (final face in _preseededCjkSerifFaces) {
-        await PdfrxEntryFunctions.instance.addFontFile(
-          face: face,
-          filePath: serifPath,
-        );
-      }
+    final registrations = <Future<void>>[
+      if (sansPath != null)
+        for (final face in _preseededCjkSansFaces)
+          PdfrxEntryFunctions.instance.addFontFile(
+            face: face,
+            filePath: sansPath,
+          ),
+      if (serifPath != null)
+        for (final face in _preseededCjkSerifFaces)
+          PdfrxEntryFunctions.instance.addFontFile(
+            face: face,
+            filePath: serifPath,
+          ),
+    ];
+    if (registrations.isNotEmpty) {
+      await Future.wait(registrations);
     }
   }
 }

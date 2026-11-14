@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/editor_models.dart';
 import 'pdf_canvas_items.dart';
+import 'toolbars/editor_palette.dart';
 
 class PdfAnnotationPropertyBar extends StatelessWidget {
   final DrawnTextAnnotation? activeTextAnnotation;
@@ -51,28 +52,6 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
     required this.onDoneTextBox,
   });
 
-  static const List<Color> _annotationPalette = [
-    Color(0xFFFFEB3B), // Yellow (Highlighter)
-    Color(0xFFFF9800), // Orange
-    Color(0xFFF44336), // Red
-    Color(0xFFE91E63), // Pink
-    Color(0xFF9C27B0), // Purple
-    Color(0xFF2196F3), // Blue
-    Color(0xFF009688), // Teal
-    Color(0xFF4CAF50), // Green
-  ];
-
-  static const List<Color> _inkPalette = [
-    Color(0xFF212121), // Black
-    Color(0xFFD32F2F), // Red
-    Color(0xFF1976D2), // Blue
-    Color(0xFF388E3C), // Green
-    Color(0xFFF57C00), // Orange
-    Color(0xFF7B1FA2), // Purple
-    Color(0xFF0097A7), // Cyan
-    Color(0xFF757575), // Gray
-  ];
-
   @override
   Widget build(BuildContext context) {
     if (activeTextAnnotation == null &&
@@ -83,22 +62,83 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
     }
 
     final theme = Theme.of(context);
-
-    Widget content;
+    final Widget content;
     if (activeTextAnnotation != null) {
       content = _buildTextAnnotationBarContent(activeTextAnnotation!, theme);
     } else if (activeShape != null) {
-      content = _buildShapeBarContent(activeShape!, theme);
+      final shape = activeShape!;
+      content = _buildPropertyBarRow(
+        theme: theme,
+        icon: shape.type.icon,
+        label: shape.type.label,
+        stepperControl: _buildNumericStepper(
+          theme: theme,
+          label: '${shape.strokeWidth.toStringAsFixed(1)} pt',
+          labelWidth: 48,
+          onDecrement: shape.strokeWidth > 1.0
+              ? () => onShapeStrokeWidthChanged(math.max(1.0, shape.strokeWidth - 1.0))
+              : null,
+          onIncrement: shape.strokeWidth < 20.0
+              ? () => onShapeStrokeWidthChanged(math.min(20.0, shape.strokeWidth + 1.0))
+              : null,
+        ),
+        palette: kEditorInkPalette,
+        selectedColor: shape.color,
+        onColorChanged: onShapeColorChanged,
+        deleteTooltip: 'Delete Shape',
+        onDelete: onDeleteShape,
+        onDone: onDoneShape,
+      );
     } else if (activeStroke != null) {
-      content = _buildStrokeBarContent(activeStroke!, theme);
+      final stroke = activeStroke!;
+      content = _buildPropertyBarRow(
+        theme: theme,
+        icon: Icons.edit_rounded,
+        label: 'Stroke',
+        stepperControl: _buildNumericStepper(
+          theme: theme,
+          label: '${stroke.strokeWidth.toStringAsFixed(1)} pt',
+          labelWidth: 48,
+          onDecrement: stroke.strokeWidth > 1.0
+              ? () => onStrokeWidthChanged(math.max(1.0, stroke.strokeWidth - 1.0))
+              : null,
+          onIncrement: stroke.strokeWidth < 30.0
+              ? () => onStrokeWidthChanged(math.min(30.0, stroke.strokeWidth + 1.0))
+              : null,
+        ),
+        palette: kEditorInkPalette,
+        selectedColor: stroke.color,
+        onColorChanged: onStrokeColorChanged,
+        deleteTooltip: 'Delete Stroke',
+        onDelete: onDeleteStroke,
+        onDone: onDoneStroke,
+      );
     } else {
-      content = _buildTextBoxBarContent(activeTextBox!, theme);
+      final tb = activeTextBox!;
+      content = _buildPropertyBarRow(
+        theme: theme,
+        icon: Icons.text_fields_rounded,
+        label: 'Text',
+        stepperControl: _buildNumericStepper(
+          theme: theme,
+          label: '${tb.fontSize.toInt()} pt',
+          labelWidth: 40,
+          onDecrement: tb.fontSize > 8 ? () => onTextBoxFontSizeChanged(tb.fontSize - 2) : null,
+          onIncrement: tb.fontSize < 72 ? () => onTextBoxFontSizeChanged(tb.fontSize + 2) : null,
+        ),
+        palette: kEditorInkPalette,
+        selectedColor: tb.color,
+        onColorChanged: onTextBoxColorChanged,
+        deleteTooltip: 'Delete Text',
+        onDelete: onDeleteTextBox,
+        onDone: onDoneTextBox,
+      );
     }
 
     return Positioned(
       left: 12,
       right: 12,
-      top: 10,
+      top: math.max(10.0, MediaQuery.paddingOf(context).top + 6.0),
       child: Center(
         child: TapRegion(
           groupId: kEditableElementRegionGroup,
@@ -128,23 +168,37 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
   }
 
   Widget _buildTextAnnotationBarContent(DrawnTextAnnotation annotation, ThemeData theme) {
-    IconData icon;
-    String label;
-    switch (annotation.type) {
-      case TextAnnotationType.highlight:
-        icon = Icons.border_color_rounded;
-        label = 'Highlight';
-        break;
-      case TextAnnotationType.underline:
-        icon = Icons.format_underlined_rounded;
-        label = 'Underline';
-        break;
-      case TextAnnotationType.strikethrough:
-        icon = Icons.format_strikethrough_rounded;
-        label = 'Strikethrough';
-        break;
-    }
+    final (IconData icon, String label) = switch (annotation.type) {
+      TextAnnotationType.highlight => (Icons.border_color_rounded, 'Highlight'),
+      TextAnnotationType.underline => (Icons.format_underlined_rounded, 'Underline'),
+      TextAnnotationType.strikethrough => (Icons.format_strikethrough_rounded, 'Strikethrough'),
+    };
+    return _buildPropertyBarRow(
+      theme: theme,
+      icon: icon,
+      label: label,
+      palette: kEditorAnnotationPalette,
+      selectedColor: annotation.color,
+      onColorChanged: onTextAnnotationColorChanged,
+      deleteTooltip: 'Delete',
+      onDelete: onDeleteTextAnnotation,
+      onDone: onDoneTextAnnotation,
+    );
+  }
 
+  Widget _buildPropertyBarRow({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    Widget? stepperControl,
+    required List<Color> palette,
+    required Color selectedColor,
+    required ValueChanged<Color> onColorChanged,
+    required String deleteTooltip,
+    required VoidCallback onDelete,
+    required VoidCallback onDone,
+  }) {
+    final selectedRgb = selectedColor.toARGB32() & 0x00FFFFFF;
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -162,16 +216,25 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
         const SizedBox(width: 8),
         _buildBarDivider(theme),
         const SizedBox(width: 8),
+        if (stepperControl != null) ...[
+          stepperControl,
+          const SizedBox(width: 8),
+          _buildBarDivider(theme),
+          const SizedBox(width: 8),
+        ],
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: _annotationPalette.map((color) {
-            final isSelected =
-                (annotation.color.toARGB32() & 0x00FFFFFF) == (color.toARGB32() & 0x00FFFFFF);
-            return _buildColorDot(
-              color: color,
-              isSelected: isSelected,
-              theme: theme,
-              onTap: () => onTextAnnotationColorChanged(color),
+          children: palette.map((color) {
+            final isSelected = selectedRgb == (color.toARGB32() & 0x00FFFFFF);
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2.5),
+              child: EditorColorDot(
+                color: color,
+                isSelected: isSelected,
+                size: 24,
+                selectedBorderColor: theme.colorScheme.primary,
+                onTap: () => onColorChanged(color),
+              ),
             );
           }).toList(),
         ),
@@ -182,8 +245,8 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
           icon: Icons.delete_outline_rounded,
           color: Colors.red,
           backgroundColor: const Color(0xFFFFEBEE),
-          tooltip: 'Delete',
-          onTap: onDeleteTextAnnotation,
+          tooltip: deleteTooltip,
+          onTap: onDelete,
         ),
         const SizedBox(width: 6),
         _buildActionButton(
@@ -191,43 +254,31 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
           color: theme.colorScheme.primary,
           backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
           tooltip: 'Done',
-          onTap: onDoneTextAnnotation,
+          onTap: onDone,
         ),
       ],
     );
   }
 
-  Widget _buildShapeBarContent(DrawnShape shape, ThemeData theme) {
+  Widget _buildNumericStepper({
+    required ThemeData theme,
+    required String label,
+    required double labelWidth,
+    VoidCallback? onDecrement,
+    VoidCallback? onIncrement,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(shape.type.icon, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 6),
-        Text(
-          shape.type.label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
         _buildStepperButton(
           icon: Icons.remove,
           theme: theme,
-          onTap: () {
-            if (shape.strokeWidth > 1.0) {
-              onShapeStrokeWidthChanged(math.max(1.0, shape.strokeWidth - 1.0));
-            }
-          },
+          onTap: onDecrement ?? () {},
         ),
         SizedBox(
-          width: 48,
+          width: labelWidth,
           child: Text(
-            '${shape.strokeWidth.toStringAsFixed(1)} pt',
+            label,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12,
@@ -239,217 +290,7 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
         _buildStepperButton(
           icon: Icons.add,
           theme: theme,
-          onTap: () {
-            if (shape.strokeWidth < 20.0) {
-              onShapeStrokeWidthChanged(math.min(20.0, shape.strokeWidth + 1.0));
-            }
-          },
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: _inkPalette.map((color) {
-            final isSelected =
-                (shape.color.toARGB32() & 0x00FFFFFF) == (color.toARGB32() & 0x00FFFFFF);
-            return _buildColorDot(
-              color: color,
-              isSelected: isSelected,
-              theme: theme,
-              onTap: () => onShapeColorChanged(color),
-            );
-          }).toList(),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        _buildActionButton(
-          icon: Icons.delete_outline_rounded,
-          color: Colors.red,
-          backgroundColor: const Color(0xFFFFEBEE),
-          tooltip: 'Delete Shape',
-          onTap: onDeleteShape,
-        ),
-        const SizedBox(width: 6),
-        _buildActionButton(
-          icon: Icons.check_rounded,
-          color: theme.colorScheme.primary,
-          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-          tooltip: 'Done',
-          onTap: onDoneShape,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStrokeBarContent(DrawingStroke stroke, ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(Icons.edit_rounded, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 6),
-        Text(
-          'Stroke',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        _buildStepperButton(
-          icon: Icons.remove,
-          theme: theme,
-          onTap: () {
-            if (stroke.strokeWidth > 1.0) {
-              onStrokeWidthChanged(math.max(1.0, stroke.strokeWidth - 1.0));
-            }
-          },
-        ),
-        SizedBox(
-          width: 48,
-          child: Text(
-            '${stroke.strokeWidth.toStringAsFixed(1)} pt',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-        ),
-        _buildStepperButton(
-          icon: Icons.add,
-          theme: theme,
-          onTap: () {
-            if (stroke.strokeWidth < 30.0) {
-              onStrokeWidthChanged(math.min(30.0, stroke.strokeWidth + 1.0));
-            }
-          },
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: _inkPalette.map((color) {
-            final isSelected =
-                (stroke.color.toARGB32() & 0x00FFFFFF) == (color.toARGB32() & 0x00FFFFFF);
-            return _buildColorDot(
-              color: color,
-              isSelected: isSelected,
-              theme: theme,
-              onTap: () => onStrokeColorChanged(color),
-            );
-          }).toList(),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        _buildActionButton(
-          icon: Icons.delete_outline_rounded,
-          color: Colors.red,
-          backgroundColor: const Color(0xFFFFEBEE),
-          tooltip: 'Delete Stroke',
-          onTap: onDeleteStroke,
-        ),
-        const SizedBox(width: 6),
-        _buildActionButton(
-          icon: Icons.check_rounded,
-          color: theme.colorScheme.primary,
-          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-          tooltip: 'Done',
-          onTap: onDoneStroke,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextBoxBarContent(DrawnTextBox tb, ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(Icons.text_fields_rounded, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 6),
-        Text(
-          'Text',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        _buildStepperButton(
-          icon: Icons.remove,
-          theme: theme,
-          onTap: () {
-            if (tb.fontSize > 8) {
-              onTextBoxFontSizeChanged(tb.fontSize - 2);
-            }
-          },
-        ),
-        SizedBox(
-          width: 40,
-          child: Text(
-            '${tb.fontSize.toInt()} pt',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-        ),
-        _buildStepperButton(
-          icon: Icons.add,
-          theme: theme,
-          onTap: () {
-            if (tb.fontSize < 72) {
-              onTextBoxFontSizeChanged(tb.fontSize + 2);
-            }
-          },
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: _inkPalette.map((color) {
-            final isSelected =
-                (tb.color.toARGB32() & 0x00FFFFFF) == (color.toARGB32() & 0x00FFFFFF);
-            return _buildColorDot(
-              color: color,
-              isSelected: isSelected,
-              theme: theme,
-              onTap: () => onTextBoxColorChanged(color),
-            );
-          }).toList(),
-        ),
-        const SizedBox(width: 8),
-        _buildBarDivider(theme),
-        const SizedBox(width: 8),
-        _buildActionButton(
-          icon: Icons.delete_outline_rounded,
-          color: Colors.red,
-          backgroundColor: const Color(0xFFFFEBEE),
-          tooltip: 'Delete Text',
-          onTap: onDeleteTextBox,
-        ),
-        const SizedBox(width: 6),
-        _buildActionButton(
-          icon: Icons.check_rounded,
-          color: theme.colorScheme.primary,
-          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-          tooltip: 'Done',
-          onTap: onDoneTextBox,
+          onTap: onIncrement ?? () {},
         ),
       ],
     );
@@ -484,49 +325,6 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
     );
   }
 
-  Widget _buildColorDot({
-    required Color color,
-    required bool isSelected,
-    required ThemeData theme,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2.5),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isSelected ? theme.colorScheme.primary : Colors.black26,
-              width: isSelected ? 2.5 : 1.0,
-            ),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.6),
-                      blurRadius: 4,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
-          ),
-          child: isSelected
-              ? Icon(
-                  Icons.check,
-                  size: 14,
-                  color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                )
-              : null,
-        ),
-      ),
-    );
-  }
-
   Widget _buildActionButton({
     required IconData icon,
     required Color color,
@@ -553,4 +351,3 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
     );
   }
 }
-

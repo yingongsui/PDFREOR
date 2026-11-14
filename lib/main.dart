@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'screens/home_screen.dart';
+import 'services/editor_settings_service.dart';
 import 'services/pdf_system_font_service.dart';
 import 'services/pdf_tab_manager.dart';
 import 'services/reading_progress_service.dart';
@@ -10,9 +11,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await Future.wait([
-    pdfrxFlutterInitialize().then((_) => PdfSystemFontService.instance.init()),
-    PdfTabManager.instance.init(),
-    ReadingProgressService.instance.init(),
+    pdfrxFlutterInitialize()
+        .then((_) => PdfSystemFontService.instance.init())
+        .catchError((e) => debugPrint('Font service init warning: $e')),
+    PdfTabManager.instance
+        .init()
+        .catchError((e) => debugPrint('Tab manager init warning: $e')),
+    ReadingProgressService.instance
+        .init()
+        .catchError((e) => debugPrint('Reading progress init warning: $e')),
+    EditorSettingsService.loadSettings()
+        .then<void>((_) {})
+        .catchError((e) => debugPrint('Settings init warning: $e')),
   ]);
   runApp(const PDFREORApp());
 }

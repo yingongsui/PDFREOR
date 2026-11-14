@@ -1,7 +1,6 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/pdf_file_info.dart';
-import '../services/pdf_thumbnail_service.dart';
+import 'shared_pdf_thumbnail.dart';
 
 class PageManagerResult {
   final List<int> deletedZeroIndexedPages;
@@ -189,7 +188,7 @@ class _PdfPageManagerDialogState extends State<PdfPageManagerDialog> {
   }
 }
 
-class _PageManagerGridTile extends StatefulWidget {
+class _PageManagerGridTile extends StatelessWidget {
   final PdfFileInfo? file;
   final int pageNum;
   final bool isNew;
@@ -206,83 +205,35 @@ class _PageManagerGridTile extends StatefulWidget {
   });
 
   @override
-  State<_PageManagerGridTile> createState() => _PageManagerGridTileState();
-}
-
-class _PageManagerGridTileState extends State<_PageManagerGridTile> {
-  Future<Uint8List?>? _thumbFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _initThumb();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PageManagerGridTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.file?.path != widget.file?.path ||
-        oldWidget.pageNum != widget.pageNum ||
-        oldWidget.isNew != widget.isNew) {
-      _initThumb();
-    }
-  }
-
-  void _initThumb() {
-    if (!widget.isNew && widget.file != null && widget.pageNum > 0) {
-      _thumbFuture = PdfThumbnailService.instance.getPageThumbnail(
-        widget.file!.path,
-        widget.pageNum,
-        lastModifiedMillis: widget.file!.lastModified.millisecondsSinceEpoch,
-        targetWidth: 200.0,
-      );
-    } else {
-      _thumbFuture = null;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Container(
       decoration: BoxDecoration(
-        color: widget.isNew
+        color: isNew
             ? Colors.amber.shade50
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: widget.isCurrent
+          color: isCurrent
               ? theme.colorScheme.primary
-              : (widget.isNew ? Colors.amber.shade400 : theme.colorScheme.outlineVariant),
-          width: widget.isCurrent ? 2 : 1,
+              : (isNew ? Colors.amber.shade400 : theme.colorScheme.outlineVariant),
+          width: isCurrent ? 2 : 1,
         ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          if (!widget.isNew && _thumbFuture != null)
+          if (!isNew && file != null && pageNum > 0)
             Positioned.fill(
-              child: FutureBuilder<Uint8List?>(
-                future: _thumbFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  if (snapshot.hasData && snapshot.data != null) {
-                    return Image.memory(
-                      snapshot.data!,
-                      fit: BoxFit.contain,
-                    );
-                  }
-                  return _buildPlaceholder(theme);
-                },
+              child: SharedPdfThumbnail.page(
+                filePath: file!.path,
+                lastModifiedMillis: file!.lastModified.millisecondsSinceEpoch,
+                pageNumber: pageNum,
+                targetWidth: 200.0,
+                cacheWidth: 260,
+                spinnerSize: 16,
+                fallbackBuilder: (_) => Center(child: _buildPlaceholder(theme)),
               ),
             )
           else
@@ -295,11 +246,11 @@ class _PageManagerGridTileState extends State<_PageManagerGridTile> {
             bottom: 0,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 3),
-              color: widget.isCurrent
+              color: isCurrent
                   ? theme.colorScheme.primary.withValues(alpha: 0.88)
                   : Colors.black.withValues(alpha: 0.58),
               child: Text(
-                widget.isNew ? 'Blank' : 'Page ${widget.pageNum}',
+                isNew ? 'Blank' : 'Page $pageNum',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -319,7 +270,7 @@ class _PageManagerGridTileState extends State<_PageManagerGridTile> {
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: widget.onDelete,
+                onTap: onDelete,
                 child: const Padding(
                   padding: EdgeInsets.all(4),
                   child: Icon(
@@ -341,17 +292,17 @@ class _PageManagerGridTileState extends State<_PageManagerGridTile> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          widget.isNew ? Icons.note_add_rounded : Icons.description_rounded,
+          isNew ? Icons.note_add_rounded : Icons.description_rounded,
           size: 30,
-          color: widget.isNew ? Colors.amber.shade800 : theme.colorScheme.onSurfaceVariant,
+          color: isNew ? Colors.amber.shade800 : theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(height: 4),
         Text(
-          widget.isNew ? 'Blank' : 'Page ${widget.pageNum}',
+          isNew ? 'Blank' : 'Page $pageNum',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 11,
-            color: widget.isNew ? Colors.amber.shade900 : theme.colorScheme.onSurfaceVariant,
+            color: isNew ? Colors.amber.shade900 : theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ],

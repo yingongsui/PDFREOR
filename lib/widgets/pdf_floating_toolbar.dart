@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/editor_models.dart';
+import 'toolbars/floating_toolbar_popups.dart';
 
 class PdfFloatingToolbar extends StatefulWidget {
   final EditorTool activeTool;
@@ -61,6 +63,7 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
   late bool _isCollapsed;
   bool _isSavingToolbar = false;
   bool _showSaveSuccess = false;
+  Timer? _saveFeedbackTimer;
 
   void _handlePanUpdate(DragUpdateDetails details) {
     setState(() {
@@ -69,11 +72,15 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
   }
 
   void _handlePanEnd(DragEndDetails details, double toolbarWidth, Size screenSize) {
+    final topMin = math.max(50.0, MediaQuery.paddingOf(context).top + 8.0);
+    final bottomMax = math.max(topMin, screenSize.height - 120.0 - MediaQuery.paddingOf(context).bottom);
     final clampedPos = Offset(
       _position.dx.clamp(4.0, math.max(4.0, screenSize.width - toolbarWidth - 4.0)),
-      _position.dy.clamp(50.0, math.max(50.0, screenSize.height - 120.0)),
+      _position.dy.clamp(topMin, bottomMax),
     );
-    _position = clampedPos;
+    setState(() {
+      _position = clampedPos;
+    });
     widget.onPositionChanged?.call(clampedPos);
   }
 
@@ -82,6 +89,12 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
     super.initState();
     _position = widget.initialPosition ?? const Offset(12, 100);
     _isCollapsed = widget.initialIsCollapsed;
+  }
+
+  @override
+  void dispose() {
+    _saveFeedbackTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -96,353 +109,6 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
     }
   }
 
-  final List<Color> _palette = const [
-    Color(0xFFFFEB3B), // Yellow (Highlighter)
-    Color(0xFFFF9800), // Orange
-    Color(0xFFF44336), // Red
-    Color(0xFFE91E63), // Pink
-    Color(0xFF9C27B0), // Purple
-    Color(0xFF2196F3), // Blue
-    Color(0xFF009688), // Teal
-    Color(0xFF4CAF50), // Green
-    Color(0xFF212121), // Black
-  ];
-
-  void _showAnchoredPopup(BuildContext buttonContext, Widget Function(BuildContext) builder) {
-    final renderBox = buttonContext.findRenderObject() as RenderBox?;
-    final offset = renderBox?.localToGlobal(Offset.zero) ?? const Offset(100, 100);
-    final size = renderBox?.size ?? const Size(48, 48);
-    final screenSize = MediaQuery.of(context).size;
-
-    final isLeftHalf = offset.dx < screenSize.width / 2;
-    final left = isLeftHalf ? offset.dx + size.width + 10 : null;
-    final right = !isLeftHalf ? (screenSize.width - offset.dx) + 10 : null;
-    final top = (offset.dy - 60).clamp(40.0, math.max(40.0, screenSize.height - 380.0)).toDouble();
-
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withValues(alpha: 0.12),
-      transitionDuration: const Duration(milliseconds: 180),
-      pageBuilder: (dialogContext, anim1, anim2) {
-        return Stack(
-          children: [
-            Positioned(
-              left: left,
-              right: right,
-              top: top,
-              child: Material(
-                color: Colors.transparent,
-                child: builder(dialogContext),
-              ),
-            ),
-          ],
-        );
-      },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(
-          opacity: anim1,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.88, end: 1.0).animate(
-              CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
-            ),
-            alignment: isLeftHalf ? Alignment.centerLeft : Alignment.centerRight,
-            child: child,
-          ),
-        );
-      },
-    );
-  }
-
-  void _showColorPicker(BuildContext buttonContext) {
-    _showAnchoredPopup(buttonContext, (dialogContext) {
-      final theme = Theme.of(context);
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 220,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.palette_outlined, size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Color Palette',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _palette.map((color) {
-                  final isSelected = widget.activeColor.toARGB32() == color.toARGB32();
-                  return GestureDetector(
-                    onTap: () {
-                      widget.onColorSelected(color);
-                      Navigator.pop(dialogContext);
-                    },
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? Colors.white : Colors.black26,
-                          width: isSelected ? 3 : 1,
-                        ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: color.withValues(alpha: 0.6),
-                                  blurRadius: 6,
-                                  spreadRadius: 2,
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: isSelected
-                          ? Icon(
-                              Icons.check,
-                              size: 18,
-                              color: color.computeLuminance() > 0.5
-                                  ? Colors.black
-                                  : Colors.white,
-                            )
-                          : null,
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  void _showStrokeWidthPicker(BuildContext buttonContext) {
-    _showAnchoredPopup(buttonContext, (dialogContext) {
-      final theme = Theme.of(context);
-      const widths = [1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0];
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 210,
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.line_weight_rounded, size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Stroke Width',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Column(
-                children: widths.map((width) {
-                  final isSelected = (widget.activeStrokeWidth - width).abs() < 0.1;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () {
-                      widget.onStrokeWidthSelected(width);
-                      Navigator.pop(dialogContext);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
-                            : null,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 52,
-                            child: Text(
-                              '${width.toStringAsFixed(1)} pt',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                color: isSelected ? theme.colorScheme.primary : null,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              height: width,
-                              decoration: BoxDecoration(
-                                color: isSelected ? theme.colorScheme.primary : Colors.grey.shade600,
-                                borderRadius: BorderRadius.circular(width / 2),
-                              ),
-                            ),
-                          ),
-                          if (isSelected) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.check_rounded, size: 16, color: theme.colorScheme.primary),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  void _showFontSizePicker(BuildContext buttonContext) {
-    _showAnchoredPopup(buttonContext, (dialogContext) {
-      final theme = Theme.of(context);
-      const fontSizes = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0];
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.format_size_rounded, size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Font Size',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: fontSizes.map((size) {
-                  final isSelected = (widget.activeFontSize - size).abs() < 0.1;
-                  return ChoiceChip(
-                    label: Text('${size.toInt()} pt'),
-                    selected: isSelected,
-                    visualDensity: VisualDensity.compact,
-                    onSelected: (selected) {
-                      if (selected) {
-                        widget.onFontSizeSelected?.call(size);
-                        Navigator.pop(dialogContext);
-                      }
-                    },
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  void _showShapePicker(BuildContext buttonContext) {
-    _showAnchoredPopup(buttonContext, (dialogContext) {
-      final theme = Theme.of(context);
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.category_outlined, size: 18, color: theme.colorScheme.primary),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Select Shape',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              _buildShapeOption(
-                dialogContext,
-                type: ShapeType.rectangle,
-                icon: Icons.rectangle_outlined,
-                title: 'Rectangle',
-              ),
-              _buildShapeOption(
-                dialogContext,
-                type: ShapeType.circle,
-                icon: Icons.circle_outlined,
-                title: 'Circle / Ellipse',
-              ),
-              _buildShapeOption(
-                dialogContext,
-                type: ShapeType.line,
-                icon: Icons.horizontal_rule_rounded,
-                title: 'Straight Line',
-              ),
-              _buildShapeOption(
-                dialogContext,
-                type: ShapeType.arrow,
-                icon: Icons.arrow_forward_rounded,
-                title: 'Arrow',
-              ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  Widget _buildShapeOption(
-    BuildContext dialogContext, {
-    required ShapeType type,
-    required IconData icon,
-    required String title,
-  }) {
-    final isSelected = widget.activeTool == EditorTool.shape && widget.activeShape == type;
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      leading: Icon(icon, size: 20),
-      title: Text(title, style: const TextStyle(fontSize: 13)),
-      trailing: isSelected ? const Icon(Icons.check, size: 18, color: Colors.blue) : null,
-      onTap: () {
-        widget.onToolSelected(EditorTool.shape);
-        widget.onShapeSelected(type);
-        Navigator.pop(dialogContext);
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -572,7 +238,14 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                   icon: widget.activeShape.icon,
                                   tooltip: 'Shapes',
                                   isSelected: widget.activeTool == EditorTool.shape,
-                                  onPressed: () => _showShapePicker(btnContext),
+                                  onPressed: () => FloatingToolbarPopups.showShapePicker(
+                                    hostContext: context,
+                                    buttonContext: btnContext,
+                                    activeTool: widget.activeTool,
+                                    activeShape: widget.activeShape,
+                                    onToolSelected: widget.onToolSelected,
+                                    onShapeSelected: widget.onShapeSelected,
+                                  ),
                                 ),
                               ),
 
@@ -604,7 +277,12 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                 builder: (btnContext) => IconButton(
                                   icon: const Icon(Icons.line_weight_rounded, size: 20),
                                   tooltip: 'Stroke Width (${widget.activeStrokeWidth.toStringAsFixed(1)} pt)',
-                                  onPressed: () => _showStrokeWidthPicker(btnContext),
+                                  onPressed: () => FloatingToolbarPopups.showStrokeWidthPicker(
+                                    hostContext: context,
+                                    buttonContext: btnContext,
+                                    activeStrokeWidth: widget.activeStrokeWidth,
+                                    onStrokeWidthSelected: widget.onStrokeWidthSelected,
+                                  ),
                                 ),
                               ),
 
@@ -613,7 +291,12 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                 builder: (btnContext) => IconButton(
                                   icon: const Icon(Icons.format_size_rounded, size: 20),
                                   tooltip: 'Font Size (${widget.activeFontSize.toInt()} pt)',
-                                  onPressed: () => _showFontSizePicker(btnContext),
+                                  onPressed: () => FloatingToolbarPopups.showFontSizePicker(
+                                    hostContext: context,
+                                    buttonContext: btnContext,
+                                    activeFontSize: widget.activeFontSize,
+                                    onFontSizeSelected: widget.onFontSizeSelected,
+                                  ),
                                 ),
                               ),
 
@@ -622,7 +305,12 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                 builder: (btnContext) => Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 4),
                                   child: GestureDetector(
-                                    onTap: () => _showColorPicker(btnContext),
+                                    onTap: () => FloatingToolbarPopups.showColorPicker(
+                                      hostContext: context,
+                                      buttonContext: btnContext,
+                                      activeColor: widget.activeColor,
+                                      onColorSelected: widget.onColorSelected,
+                                    ),
                                     child: Container(
                                       width: 26,
                                       height: 26,
@@ -705,12 +393,15 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                               _isSavingToolbar = false;
                                               _showSaveSuccess = true;
                                             });
-                                            Future.delayed(
-                                                const Duration(milliseconds: 1800), () {
-                                              if (mounted) {
-                                                setState(() => _showSaveSuccess = false);
-                                              }
-                                            });
+                                            _saveFeedbackTimer?.cancel();
+                                            _saveFeedbackTimer = Timer(
+                                              const Duration(milliseconds: 1800),
+                                              () {
+                                                if (mounted) {
+                                                  setState(() => _showSaveSuccess = false);
+                                                }
+                                              },
+                                            );
                                           }
                                         } catch (_) {
                                           if (mounted) {

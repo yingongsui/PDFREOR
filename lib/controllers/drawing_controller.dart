@@ -17,6 +17,21 @@ enum _UndoActionType {
   modifyShape,
   modifyImage,
   modifyTextBoxLayout,
+  modifyStrokeMove,
+}
+
+class _StrokeMoveChange {
+  final DrawingStroke stroke;
+  final Offset delta;
+
+  const _StrokeMoveChange(this.stroke, this.delta);
+}
+
+class _RemovedEntry {
+  final int index;
+  final dynamic item;
+
+  const _RemovedEntry(this.index, this.item);
 }
 
 class _ShapeChange {
@@ -77,6 +92,9 @@ class _UndoAction {
 }
 
 class DrawingController extends ChangeNotifier {
+  static const int _maxUndoHistory = 120;
+  static const double _minStrokePointDistanceSq = 0.1225; // ~0.35 doc px
+
   final List<DrawingStroke> _strokes = [];
   final List<DrawnShape> _shapes = [];
   final List<DrawnTextBox> _textBoxes = [];
@@ -98,6 +116,7 @@ class DrawingController extends ChangeNotifier {
   Offset? _activeShapeStart;
   Offset? _activeShapeEnd;
   bool _isDirty = false;
+  bool _hasSavedBaseline = false;
 
   late final UnmodifiableListView<DrawingStroke> _strokesView = UnmodifiableListView(_strokes);
   late final UnmodifiableListView<DrawnShape> _shapesView = UnmodifiableListView(_shapes);
@@ -123,7 +142,14 @@ class DrawingController extends ChangeNotifier {
       _textBoxes.isNotEmpty ||
       _images.isNotEmpty ||
       _textAnnotations.isNotEmpty;
-  bool get hasUnsavedChanges => _isDirty && hasAnnotations;
+  bool get hasUnsavedChanges => _isDirty && (hasAnnotations || _hasSavedBaseline);
+
+  void _pushUndo(_UndoAction action) {
+    _undoHistory.add(action);
+    if (_undoHistory.length > _maxUndoHistory) {
+      _undoHistory.removeAt(0);
+    }
+  }
 
   void _notifyActiveOnly() {
     _activeLayerNotifier.notify();
@@ -149,6 +175,7 @@ class DrawingController extends ChangeNotifier {
   }
 
   void markSaved() {
+    _hasSavedBaseline = hasAnnotations;
     _isDirty = false;
     notifyListeners();
   }
@@ -156,6 +183,8 @@ class DrawingController extends ChangeNotifier {
   // --- STROKE DRAWING ---
 
   void startStroke(Offset point, double pressure) {
+    _activeShapeStart = null;
+    _activeShapeEnd = null;
     _activeStrokePoints = [
       StrokePoint(offset: point, pressure: pressure > 0 ? pressure : 1.0),
     ];
@@ -163,12 +192,16 @@ class DrawingController extends ChangeNotifier {
   }
 
   void addStrokePoint(Offset point, double pressure) {
-    if (_activeStrokePoints != null) {
-      _activeStrokePoints!.add(
-        StrokePoint(offset: point, pressure: pressure > 0 ? pressure : 1.0),
-      );
-      _notifyActiveOnly();
+    final active = _activeStrokePoints;
+    if (active == null) return;
+    if (active.isNotEmpty &&
+        (point - active.last.offset).distanceSquared < _minStrokePointDistanceSq) {
+      return;
     }
+    active.add(
+      StrokePoint(offset: point, pressure: pressure > 0 ? pressure : 1.0),
+    );
+    _notifyActiveOnly();
   }
 
   void endStroke(Color color, double strokeWidth, int pageNumber) {
@@ -180,7 +213,7 @@ class DrawingController extends ChangeNotifier {
         pageNumber: pageNumber,
       );
       _strokes.add(stroke);
-      _undoHistory.add(_UndoAction(_UndoActionType.addStroke, stroke));
+      _pushUndo(_UndoAction(_UndoActionType.addStroke, stroke));
       _isDirty = true;
     }
     _activeStrokePoints = null;
@@ -206,7 +239,7 @@ class DrawingController extends ChangeNotifier {
       if (pageNumber != null && stroke.pageNumber != pageNumber) continue;
 
       if (_hitTestStroke(stroke, point, radius + stroke.strokeWidth / 2)) {
-        _undoHistory.add(_UndoAction(_UndoActionType.removeStroke, stroke));
+        _pushUndo(_UndoAction(_UndoActionType.removeStroke, _RemovedEntry(i, stroke)));
         _strokes.removeAt(i);
         erasedStrokes = true;
       }
@@ -218,14 +251,14 @@ class DrawingController extends ChangeNotifier {
       if (pageNumber != null && shape.pageNumber != pageNumber) continue;
 
       if (isPointNearShape(point, shape, radius + shape.strokeWidth / 2)) {
-        _undoHistory.add(_UndoAction(_UndoActionType.removeShape, shape));
+        _pushUndo(_UndoAction(_UndoActionType.removeShape, _RemovedEntry(i, shape)));
         _shapes.removeAt(i);
         erasedShapes = true;
       }
     }
 
     if (erasedStrokes || erasedShapes) {
-      _isDirty = hasAnnotations;
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       if (erasedStrokes) {
         _savedLayerNotifier.notify();
       }
@@ -257,13 +290,31 @@ class DrawingController extends ChangeNotifier {
     }
     switch (shape.type) {
       case ShapeType.rectangle:
-        // Inside small rectangle or near perimeter of larger rectangle
-        if (rect.width < 100 && rect.height < 100) return true;
+        // Inside small rectangle or near perimeter
+        if (rect.width < 100 && rect.height < 100 && rect.contains(point)) {
+          return true;
+        }
         final l1 = _distToSegment(point, rect.topLeft, rect.topRight);
         final l2 = _distToSegment(point, rect.topRight, rect.bottomRight);
         final l3 = _distToSegment(point, rect.bottomRight, rect.bottomLeft);
         final l4 = _distToSegment(point, rect.bottomLeft, rect.topLeft);
         return math.min(math.min(l1, l2), math.min(l3, l4)) <= threshold;
+      case ShapeType.roundedRectangle:
+        final radius = roundedRectCornerRadius(rect);
+        final halfW = rect.width * 0.5;
+        final halfH = rect.height * 0.5;
+        final center = rect.center;
+        final qx = (point.dx - center.dx).abs() - (halfW - radius);
+        final qy = (point.dy - center.dy).abs() - (halfH - radius);
+        final outsideX = math.max(qx, 0.0);
+        final outsideY = math.max(qy, 0.0);
+        final outsideDist = math.sqrt(outsideX * outsideX + outsideY * outsideY);
+        final insideDist = math.min(math.max(qx, qy), 0.0);
+        final signedDist = outsideDist + insideDist - radius;
+        if (rect.width < 100 && rect.height < 100 && signedDist <= threshold) {
+          return true;
+        }
+        return signedDist.abs() <= threshold;
       case ShapeType.circle:
         final center = rect.center;
         final rx = rect.width / 2;
@@ -312,12 +363,29 @@ class DrawingController extends ChangeNotifier {
     _notifySavedOnly();
   }
 
+  void moveStroke(DrawingStroke stroke, Offset delta) {
+    if (delta == Offset.zero) return;
+    stroke.translate(delta);
+    _isDirty = true;
+    _notifySavedOnly();
+  }
+
+  void recordStrokeMove(DrawingStroke stroke, Offset totalDelta) {
+    if (totalDelta == Offset.zero) return;
+    _pushUndo(_UndoAction(
+      _UndoActionType.modifyStrokeMove,
+      _StrokeMoveChange(stroke, totalDelta),
+    ));
+    _isDirty = true;
+    notifyListeners();
+  }
+
   void deleteStroke(String id) {
     final idx = _strokes.indexWhere((s) => s.id == id);
     if (idx != -1) {
       final removed = _strokes.removeAt(idx);
-      _undoHistory.add(_UndoAction(_UndoActionType.removeStroke, removed));
-      _isDirty = hasAnnotations;
+      _pushUndo(_UndoAction(_UndoActionType.removeStroke, _RemovedEntry(idx, removed)));
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       _notifySavedOnly();
     }
   }
@@ -336,6 +404,7 @@ class DrawingController extends ChangeNotifier {
   // --- SHAPE DRAWING ---
 
   void startShape(Offset point) {
+    _activeStrokePoints = null;
     _activeShapeStart = point;
     _activeShapeEnd = point;
     _notifyActiveOnly();
@@ -344,6 +413,14 @@ class DrawingController extends ChangeNotifier {
   void updateShape(Offset point) {
     _activeShapeEnd = point;
     _notifyActiveOnly();
+  }
+
+  void cancelActiveShape() {
+    if (_activeShapeStart != null || _activeShapeEnd != null) {
+      _activeShapeStart = null;
+      _activeShapeEnd = null;
+      _notifyActiveOnly();
+    }
   }
 
   void endShape(ShapeType type, Color color, double strokeWidth, int pageNumber) {
@@ -359,7 +436,7 @@ class DrawingController extends ChangeNotifier {
           pageNumber: pageNumber,
         );
         _shapes.add(shape);
-        _undoHistory.add(_UndoAction(_UndoActionType.addShape, shape));
+        _pushUndo(_UndoAction(_UndoActionType.addShape, shape));
         _isDirty = true;
       }
     }
@@ -381,15 +458,15 @@ class DrawingController extends ChangeNotifier {
     final idx = _shapes.indexWhere((s) => s.id == id);
     if (idx != -1) {
       final removed = _shapes.removeAt(idx);
-      _undoHistory.add(_UndoAction(_UndoActionType.removeShape, removed));
-      _isDirty = hasAnnotations;
+      _pushUndo(_UndoAction(_UndoActionType.removeShape, _RemovedEntry(idx, removed)));
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       notifyListeners();
     }
   }
 
   void recordShapeModification(DrawnShape shape, Offset oldStart, Offset oldEnd) {
     if (shape.start != oldStart || shape.end != oldEnd) {
-      _undoHistory.add(_UndoAction(
+      _pushUndo(_UndoAction(
         _UndoActionType.modifyShape,
         _ShapeChange(shape, oldStart, oldEnd, shape.start, shape.end),
       ));
@@ -402,7 +479,7 @@ class DrawingController extends ChangeNotifier {
 
   void addTextBox(DrawnTextBox tb) {
     _textBoxes.add(tb);
-    _undoHistory.add(_UndoAction(_UndoActionType.addTextBox, tb));
+    _pushUndo(_UndoAction(_UndoActionType.addTextBox, tb));
     _isDirty = true;
     notifyListeners();
   }
@@ -422,7 +499,7 @@ class DrawingController extends ChangeNotifier {
     double? oldWidth,
   ) {
     if (tb.position != oldPosition || tb.width != oldWidth) {
-      _undoHistory.add(_UndoAction(
+      _pushUndo(_UndoAction(
         _UndoActionType.modifyTextBoxLayout,
         _TextBoxLayoutChange(tb, oldPosition, oldWidth, tb.position, tb.width),
       ));
@@ -442,9 +519,9 @@ class DrawingController extends ChangeNotifier {
           identical(_undoHistory.last.data, removed)) {
         _undoHistory.removeLast();
       } else {
-        _undoHistory.add(_UndoAction(_UndoActionType.removeTextBox, removed));
+        _pushUndo(_UndoAction(_UndoActionType.removeTextBox, _RemovedEntry(idx, removed)));
       }
-      _isDirty = hasAnnotations;
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       notifyListeners();
     }
   }
@@ -453,7 +530,7 @@ class DrawingController extends ChangeNotifier {
 
   void addImage(DrawnImage img) {
     _images.add(img);
-    _undoHistory.add(_UndoAction(_UndoActionType.addImage, img));
+    _pushUndo(_UndoAction(_UndoActionType.addImage, img));
     _isDirty = true;
     notifyListeners();
   }
@@ -474,7 +551,7 @@ class DrawingController extends ChangeNotifier {
     double oldHeight,
   ) {
     if (img.position != oldPosition || img.width != oldWidth || img.height != oldHeight) {
-      _undoHistory.add(_UndoAction(
+      _pushUndo(_UndoAction(
         _UndoActionType.modifyImage,
         _ImageChange(img, oldPosition, oldWidth, oldHeight, img.position, img.width, img.height),
       ));
@@ -487,8 +564,8 @@ class DrawingController extends ChangeNotifier {
     final idx = _images.indexWhere((i) => i.id == id);
     if (idx != -1) {
       final removed = _images.removeAt(idx);
-      _undoHistory.add(_UndoAction(_UndoActionType.removeImage, removed));
-      _isDirty = hasAnnotations;
+      _pushUndo(_UndoAction(_UndoActionType.removeImage, _RemovedEntry(idx, removed)));
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       notifyListeners();
     }
   }
@@ -497,7 +574,7 @@ class DrawingController extends ChangeNotifier {
 
   void addTextAnnotation(DrawnTextAnnotation ta) {
     _textAnnotations.add(ta);
-    _undoHistory.add(_UndoAction(_UndoActionType.addTextAnnotation, ta));
+    _pushUndo(_UndoAction(_UndoActionType.addTextAnnotation, ta));
     _isDirty = true;
     _notifySavedOnly();
   }
@@ -515,8 +592,10 @@ class DrawingController extends ChangeNotifier {
     final idx = _textAnnotations.indexWhere((a) => a.id == id);
     if (idx != -1) {
       final removed = _textAnnotations.removeAt(idx);
-      _undoHistory.add(_UndoAction(_UndoActionType.removeTextAnnotation, removed));
-      _isDirty = hasAnnotations;
+      _pushUndo(
+        _UndoAction(_UndoActionType.removeTextAnnotation, _RemovedEntry(idx, removed)),
+      );
+      _isDirty = hasAnnotations || _hasSavedBaseline;
       _notifySavedOnly();
     }
   }
@@ -558,20 +637,28 @@ class DrawingController extends ChangeNotifier {
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.removeStroke:
-        _strokes.add(action.data);
+        final entry = action.data as _RemovedEntry;
+        _strokes.insert(entry.index.clamp(0, _strokes.length), entry.item as DrawingStroke);
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.removeShape:
-        _shapes.add(action.data);
+        final entry = action.data as _RemovedEntry;
+        _shapes.insert(entry.index.clamp(0, _shapes.length), entry.item as DrawnShape);
         break;
       case _UndoActionType.removeTextBox:
-        _textBoxes.add(action.data);
+        final entry = action.data as _RemovedEntry;
+        _textBoxes.insert(entry.index.clamp(0, _textBoxes.length), entry.item as DrawnTextBox);
         break;
       case _UndoActionType.removeImage:
-        _images.add(action.data);
+        final entry = action.data as _RemovedEntry;
+        _images.insert(entry.index.clamp(0, _images.length), entry.item as DrawnImage);
         break;
       case _UndoActionType.removeTextAnnotation:
-        _textAnnotations.add(action.data);
+        final entry = action.data as _RemovedEntry;
+        _textAnnotations.insert(
+          entry.index.clamp(0, _textAnnotations.length),
+          entry.item as DrawnTextAnnotation,
+        );
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.modifyShape:
@@ -590,8 +677,13 @@ class DrawingController extends ChangeNotifier {
         change.textBox.position = change.oldPosition;
         change.textBox.width = change.oldWidth;
         break;
+      case _UndoActionType.modifyStrokeMove:
+        final change = action.data as _StrokeMoveChange;
+        change.stroke.translate(-change.delta);
+        _savedLayerNotifier.notify();
+        break;
     }
-    _isDirty = hasAnnotations;
+    _isDirty = hasAnnotations || _hasSavedBaseline;
     notifyListeners();
   }
 
@@ -606,6 +698,7 @@ class DrawingController extends ChangeNotifier {
     _activeShapeStart = null;
     _activeShapeEnd = null;
     _isDirty = false;
+    _hasSavedBaseline = false;
     _notifyBothLayers();
   }
 }

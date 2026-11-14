@@ -1,10 +1,11 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/pdf_file_info.dart';
-import '../services/pdf_thumbnail_service.dart';
+import 'shared_pdf_thumbnail.dart';
 
-class PdfThumbnailCard extends StatefulWidget {
+class PdfThumbnailCard extends StatelessWidget {
+  static final DateFormat _dateFormat = DateFormat('yyyy-MM-dd');
+
   final PdfFileInfo file;
   final bool isOpen;
   final bool isSelectionMode;
@@ -23,73 +24,21 @@ class PdfThumbnailCard extends StatefulWidget {
   });
 
   @override
-  State<PdfThumbnailCard> createState() => _PdfThumbnailCardState();
-}
-
-class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
-  Uint8List? _thumbnailBytes;
-  bool _isLoading = true;
-  bool _hasError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadThumbnail();
-  }
-
-  @override
-  void didUpdateWidget(covariant PdfThumbnailCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.file.path != widget.file.path ||
-        oldWidget.file.lastModified != widget.file.lastModified) {
-      _loadThumbnail();
-    }
-  }
-
-  Future<void> _loadThumbnail() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
-
-    try {
-      final bytes = await PdfThumbnailService.instance.getThumbnail(
-        widget.file.path,
-        lastModifiedMillis: widget.file.lastModified.millisecondsSinceEpoch,
-      );
-      if (mounted) {
-        setState(() {
-          _thumbnailBytes = bytes;
-          _isLoading = false;
-          _hasError = bytes == null;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _hasError = true;
-        });
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dateFormat = DateFormat('yyyy-MM-dd');
+    final dateFormat = _dateFormat;
     const dodgerBlue = Color(0xFF1E90FF);
 
     return Card(
-      elevation: widget.isOpen ? 4 : 2,
-      shadowColor: widget.isOpen
+      elevation: isOpen ? 4 : 2,
+      shadowColor: isOpen
           ? dodgerBlue.withValues(alpha: 0.3)
           : theme.colorScheme.shadow.withValues(alpha: 0.15),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: widget.isSelected
+        side: isSelected
             ? BorderSide(color: theme.colorScheme.primary, width: 2.5)
-            : widget.isOpen
+            : isOpen
                 ? const BorderSide(color: dodgerBlue, width: 2.5)
                 : BorderSide(
                     color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
@@ -97,8 +46,8 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
+        onTap: onTap,
+        onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -109,7 +58,33 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                 children: [
                   Container(
                     color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                    child: _buildThumbnailImage(theme),
+                    child: SharedPdfThumbnail.cover(
+                      filePath: file.path,
+                      lastModifiedMillis: file.lastModified.millisecondsSinceEpoch,
+                      cacheWidth: 320,
+                      spinnerSize: 24,
+                      spinnerColor: theme.colorScheme.primary.withValues(alpha: 0.6),
+                      fallbackBuilder: (_) => Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.picture_as_pdf_rounded,
+                              size: 48,
+                              color: Colors.red.shade400,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'PDF Preview',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
 
                   // Format Badge (PDF)
@@ -142,7 +117,7 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                   ),
 
                   // Open Badge (DodgerBlue)
-                  if (widget.isOpen)
+                  if (isOpen)
                     Positioned(
                       top: 8,
                       left: 44,
@@ -179,7 +154,7 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                     ),
 
                   // Selection indicator (only shown in selection mode)
-                  if (widget.isSelectionMode)
+                  if (isSelectionMode)
                     Positioned(
                       top: 6,
                       right: 6,
@@ -187,14 +162,14 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                         width: 24,
                         height: 24,
                         decoration: BoxDecoration(
-                          color: widget.isSelected ? theme.colorScheme.primary : Colors.black45,
+                          color: isSelected ? theme.colorScheme.primary : Colors.black45,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: Colors.white,
                             width: 1.5,
                           ),
                         ),
-                        child: widget.isSelected
+                        child: isSelected
                             ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
                             : null,
                       ),
@@ -211,7 +186,7 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    widget.file.name,
+                    file.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -223,7 +198,7 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                   Row(
                     children: [
                       Text(
-                        widget.file.formattedSize,
+                        file.formattedSize,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.primary,
                           fontWeight: FontWeight.w500,
@@ -233,7 +208,7 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
                       const Spacer(),
                       Flexible(
                         child: Text(
-                          dateFormat.format(widget.file.lastModified),
+                          dateFormat.format(file.lastModified),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
@@ -252,57 +227,4 @@ class _PdfThumbnailCardState extends State<PdfThumbnailCard> {
     );
   }
 
-  Widget _buildThumbnailImage(ThemeData theme) {
-    if (_isLoading) {
-      return Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: theme.colorScheme.primary.withValues(alpha: 0.6),
-          ),
-        ),
-      );
-    }
-
-    if (_hasError || _thumbnailBytes == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.picture_as_pdf_rounded,
-              size: 48,
-              color: Colors.red.shade400,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'PDF Preview',
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Image.memory(
-      _thumbnailBytes!,
-      fit: BoxFit.cover,
-      alignment: Alignment.topCenter,
-      errorBuilder: (context, error, stackTrace) {
-        return Center(
-          child: Icon(
-            Icons.picture_as_pdf_rounded,
-            size: 48,
-            color: Colors.red.shade400,
-          ),
-        );
-      },
-    );
-  }
 }
-

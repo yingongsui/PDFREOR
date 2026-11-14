@@ -334,6 +334,145 @@ void main() {
         expect(shape.end.dy, greaterThan(8415.0));
       },
     );
+
+    test('Move stroke updates points and bounds cleanly and supports undo', () {
+      final controller = DrawingController();
+      addTearDown(controller.dispose);
+
+      controller.startStroke(const Offset(20, 30), 0.8);
+      controller.addStrokePoint(const Offset(60, 70), 0.9);
+      controller.endStroke(Colors.blue, 4.0, 1);
+      final stroke = controller.strokes.single;
+
+      // Warm cached bounds and path batches before moving
+      final origBounds = stroke.getBounds();
+      expect(origBounds, const Rect.fromLTRB(20, 30, 60, 70));
+      expect(stroke.getPathBatches().isNotEmpty, true);
+
+      controller.markSaved();
+      expect(controller.hasUnsavedChanges, false);
+
+      const moveDelta = Offset(45, -15);
+      controller.moveStroke(stroke, moveDelta);
+      controller.recordStrokeMove(stroke, moveDelta);
+
+      expect(controller.hasUnsavedChanges, true);
+      expect(stroke.points[0].offset, const Offset(65, 15));
+      expect(stroke.points[1].offset, const Offset(105, 55));
+      expect(stroke.getBounds(), const Rect.fromLTRB(65, 15, 105, 55));
+
+      controller.undo();
+      expect(stroke.points[0].offset, const Offset(20, 30));
+      expect(stroke.points[1].offset, const Offset(60, 70));
+      expect(stroke.getBounds(), origBounds);
+      expect(controller.hitTestStroke(const Offset(20, 30)), stroke);
+    });
+
+    testWidgets(
+      'Selected handwritten stroke on later page can be dragged to move and undone',
+      (tester) async {
+        final controller = DrawingController();
+        // Scroll to page 10 and zoom to 2.0x to verify scale-aware delta handling
+        final transformController = TransformationController(
+          Matrix4.translationValues(0.0, -16000.0, 0.0)..scaleByDouble(2.0, 2.0, 1.0, 1.0),
+        );
+        addTearDown(() {
+          transformController.dispose();
+          controller.dispose();
+        });
+
+        controller.startStroke(const Offset(100, 8100), 1.0);
+        controller.addStrokePoint(const Offset(180, 8100), 1.0);
+        controller.endStroke(Colors.red, 4.0, 10);
+        final stroke = controller.strokes.single;
+
+        String? selectedStrokeId;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    return ListenableBuilder(
+                      listenable: controller,
+                      builder: (context, _) {
+                        return PdfEditorCanvas(
+                          controller: controller,
+                          transformationController: transformController,
+                          activeTool: EditorTool.select,
+                          activeShape: ShapeType.rectangle,
+                          activeColor: Colors.black,
+                          activeStrokeWidth: 2.0,
+                          currentPage: 10,
+                          stylusOnlyMode: false,
+                          selectedStrokeId: selectedStrokeId,
+                          onSelectedStrokeChanged: (id) =>
+                              setState(() => selectedStrokeId = id),
+                          onAddTextBoxRequested: (_) {},
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // With translation (0, -16000) and scale 2.0:
+        // doc (140, 8100) maps to viewport (280, 200).
+        await tester.tapAt(const Offset(280, 200));
+        await tester.pump();
+        expect(selectedStrokeId, stroke.id);
+
+        // Drag from viewport (280, 200) by screen (+100, +60) -> doc (+50, +30)
+        // minus pan slop at 2.0x scale.
+        await tester.dragFrom(const Offset(280, 200), const Offset(100, 60));
+        await tester.pump();
+
+        expect(selectedStrokeId, stroke.id);
+        expect(stroke.points[0].offset.dx, greaterThan(120.0));
+        expect(stroke.points[0].offset.dy, greaterThan(8110.0));
+        expect(stroke.points[1].offset.dx, greaterThan(200.0));
+        expect(stroke.points[1].offset.dy, greaterThan(8110.0));
+        expect(controller.canUndo, true);
+
+        controller.undo();
+        await tester.pump();
+        expect(stroke.points[0].offset.dx, closeTo(100.0, 0.001));
+        expect(stroke.points[0].offset.dy, closeTo(8100.0, 0.001));
+      },
+    );
+
+    test('Rounded rectangle hit testing, erasing, and undo', () {
+      final controller = DrawingController();
+      addTearDown(controller.dispose);
+
+      // Large 200x200 rounded rectangle from (100, 100) to (300, 300), radius = 20
+      controller.startShape(const Offset(100, 100));
+      controller.updateShape(const Offset(300, 300));
+      controller.endShape(ShapeType.roundedRectangle, Colors.teal, 3.0, 1);
+
+      final shape = controller.shapes.single;
+      // Top edge midpoint hits
+      expect(DrawingController.isPointNearShape(const Offset(200, 100), shape, 12.0), true);
+      // Point on rounded top-left corner arc (center=(120,120), r=20) hits
+      expect(DrawingController.isPointNearShape(const Offset(106, 106), shape, 12.0), true);
+      // Sharp corner outside rounded arc misses with tight threshold
+      expect(DrawingController.isPointNearShape(const Offset(100, 100), shape, 4.0), false);
+      // Deep interior misses for large shape
+      expect(DrawingController.isPointNearShape(const Offset(200, 200), shape, 24.0), false);
+
+      expect(controller.eraseAt(const Offset(200, 100), 1), true);
+      expect(controller.shapes.isEmpty, true);
+
+      controller.undo();
+      expect(controller.shapes.length, 1);
+      expect(controller.shapes.single.type, ShapeType.roundedRectangle);
+    });
   });
 }
 

@@ -2,11 +2,19 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
+int _annotationIdSeq = 0;
+
+/// Generates a collision-free unique annotation identifier even when multiple
+/// annotations are created within the same microsecond.
+String nextAnnotationId([String prefix = 'ann']) {
+  return '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${_annotationIdSeq++}';
+}
+
 enum EditorTool {
   select, // Navigation & text selection
   pen, // Freehand stylus / pen drawing
   eraser, // Stroke eraser (erases whole continuous stroke)
-  shape, // Geometric shapes (rectangle, circle, line, arrow)
+  shape, // Geometric shapes (rectangle, roundedRectangle, circle, line, arrow)
   textBox, // Add text box
   latexBox, // Add LaTeX math formula box
 }
@@ -15,12 +23,15 @@ enum ShapeType {
   rectangle,
   circle,
   line,
-  arrow;
+  arrow,
+  roundedRectangle;
 
   IconData get icon {
     switch (this) {
       case ShapeType.rectangle:
         return Icons.rectangle_outlined;
+      case ShapeType.roundedRectangle:
+        return Icons.rounded_corner_rounded;
       case ShapeType.circle:
         return Icons.circle_outlined;
       case ShapeType.line:
@@ -34,6 +45,8 @@ enum ShapeType {
     switch (this) {
       case ShapeType.rectangle:
         return 'Rectangle';
+      case ShapeType.roundedRectangle:
+        return 'Rounded Rect';
       case ShapeType.circle:
         return 'Circle';
       case ShapeType.line:
@@ -42,6 +55,11 @@ enum ShapeType {
         return 'Arrow';
     }
   }
+}
+
+double roundedRectCornerRadius(Rect rect) {
+  final minSide = math.min(rect.width.abs(), rect.height.abs());
+  return math.min(20.0, minSide * 0.2);
 }
 
 void paintShapeOnCanvas(
@@ -55,6 +73,13 @@ void paintShapeOnCanvas(
   switch (type) {
     case ShapeType.rectangle:
       canvas.drawRect(rect, paint);
+      break;
+    case ShapeType.roundedRectangle:
+      final radius = roundedRectCornerRadius(rect);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+        paint,
+      );
       break;
     case ShapeType.circle:
       canvas.drawOval(rect, paint);
@@ -101,7 +126,7 @@ class DrawnTextAnnotation {
     required this.rects,
     required this.color,
     required this.pageNumber,
-  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+  }) : id = id ?? nextAnnotationId('ta');
 
   void invalidateBounds() {
     _cachedBounds = null;
@@ -133,6 +158,13 @@ class StrokePoint {
   });
 }
 
+class StrokePathBatch {
+  final double strokeWidth;
+  final Path path;
+
+  const StrokePathBatch(this.strokeWidth, this.path);
+}
+
 class DrawingStroke {
   final String id;
   final List<StrokePoint> points;
@@ -140,6 +172,8 @@ class DrawingStroke {
   double strokeWidth;
   final int pageNumber;
   Rect? _cachedBounds;
+  List<StrokePathBatch>? _cachedPathBatches;
+  double? _cachedForWidth;
 
   DrawingStroke({
     String? id,
@@ -147,10 +181,68 @@ class DrawingStroke {
     required this.color,
     required this.strokeWidth,
     required this.pageNumber,
-  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+  }) : id = id ?? nextAnnotationId('st');
 
   void invalidateBounds() {
     _cachedBounds = null;
+    _cachedPathBatches = null;
+    _cachedForWidth = null;
+  }
+
+  /// Returns cached pressure-quantized [Path] batches so rendering avoids looping
+  /// through hundreds of individual segments on every pan/zoom frame.
+  List<StrokePathBatch> getPathBatches() {
+    if (_cachedPathBatches != null && _cachedForWidth == strokeWidth) {
+      return _cachedPathBatches!;
+    }
+    final batches = buildStrokePathBatches(points, strokeWidth);
+    _cachedPathBatches = batches;
+    _cachedForWidth = strokeWidth;
+    return batches;
+  }
+
+  static List<StrokePathBatch> buildStrokePathBatches(
+    List<StrokePoint> points,
+    double baseWidth,
+  ) {
+    if (points.length < 2) return const <StrokePathBatch>[];
+
+    final batches = <StrokePathBatch>[];
+    double? currentBucketWidth;
+    Path? currentPath;
+    Offset? lastEnd;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final avgPressure = (p1.pressure + p2.pressure) * 0.5;
+      final pressureScale = (avgPressure > 0.0 && avgPressure != 1.0)
+          ? (0.75 + 0.5 * avgPressure.clamp(0.0, 1.0))
+          : 1.0;
+      final rawW = math.max(0.5, baseWidth * pressureScale);
+      // Quantize width to 0.25 px steps so neighboring segments merge into shared Paths
+      final bucketW = (rawW * 4.0).round() / 4.0;
+
+      if (currentPath == null || currentBucketWidth != bucketW) {
+        if (currentPath != null && currentBucketWidth != null) {
+          batches.add(StrokePathBatch(currentBucketWidth, currentPath));
+        }
+        currentBucketWidth = bucketW;
+        currentPath = Path()..moveTo(p1.offset.dx, p1.offset.dy);
+        currentPath.lineTo(p2.offset.dx, p2.offset.dy);
+      } else {
+        if (lastEnd != p1.offset) {
+          currentPath.moveTo(p1.offset.dx, p1.offset.dy);
+        }
+        currentPath.lineTo(p2.offset.dx, p2.offset.dy);
+      }
+      lastEnd = p2.offset;
+    }
+
+    if (currentPath != null && currentBucketWidth != null) {
+      batches.add(StrokePathBatch(currentBucketWidth, currentPath));
+    }
+    return batches;
   }
 
   Rect getBounds() {
@@ -175,6 +267,31 @@ class DrawingStroke {
     _cachedBounds = b;
     return b;
   }
+
+  Rect getSelectionBounds([double extraPadding = 0.0]) {
+    return getBounds().inflate(6.0 + strokeWidth * 0.5 + extraPadding);
+  }
+
+  void translate(Offset delta) {
+    if (delta == Offset.zero) return;
+    for (int i = 0; i < points.length; i++) {
+      final p = points[i];
+      points[i] = StrokePoint(
+        offset: p.offset + delta,
+        pressure: p.pressure,
+      );
+    }
+    if (_cachedBounds != null) {
+      _cachedBounds = _cachedBounds!.shift(delta);
+    }
+    final batches = _cachedPathBatches;
+    if (batches != null) {
+      _cachedPathBatches = [
+        for (final batch in batches)
+          StrokePathBatch(batch.strokeWidth, batch.path.shift(delta)),
+      ];
+    }
+  }
 }
 
 class DrawnShape {
@@ -194,7 +311,7 @@ class DrawnShape {
     required this.color,
     required this.strokeWidth,
     required this.pageNumber,
-  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+  }) : id = id ?? nextAnnotationId('sh');
 }
 
 class DrawnTextBox {
@@ -236,4 +353,3 @@ class DrawnImage {
     required this.pageNumber,
   });
 }
-

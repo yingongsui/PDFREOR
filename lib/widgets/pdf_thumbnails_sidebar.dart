@@ -1,8 +1,7 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/pdf_file_info.dart';
-import '../services/pdf_thumbnail_service.dart';
+import 'shared_pdf_thumbnail.dart';
 
 class PdfThumbnailsSidebar extends StatefulWidget {
   final PdfFileInfo file;
@@ -165,7 +164,7 @@ class _PdfThumbnailsSidebarState extends State<PdfThumbnailsSidebar> {
   }
 }
 
-class _ThumbnailCard extends StatefulWidget {
+class _ThumbnailCard extends StatelessWidget {
   final String filePath;
   final int lastModifiedMillis;
   final int pageNumber;
@@ -182,54 +181,23 @@ class _ThumbnailCard extends StatefulWidget {
   });
 
   @override
-  State<_ThumbnailCard> createState() => _ThumbnailCardState();
-}
-
-class _ThumbnailCardState extends State<_ThumbnailCard> {
-  late Future<Uint8List?> _thumbnailFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFuture();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ThumbnailCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.filePath != widget.filePath ||
-        oldWidget.pageNumber != widget.pageNumber ||
-        oldWidget.lastModifiedMillis != widget.lastModifiedMillis) {
-      _loadFuture();
-    }
-  }
-
-  void _loadFuture() {
-    _thumbnailFuture = PdfThumbnailService.instance.getPageThumbnail(
-      widget.filePath,
-      widget.pageNumber,
-      lastModifiedMillis: widget.lastModifiedMillis,
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: widget.onTap,
+      onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: widget.isCurrent
+            color: isCurrent
                 ? const Color(0xFF1E90FF)
                 : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-            width: widget.isCurrent ? 2.2 : 1.0,
+            width: isCurrent ? 2.2 : 1.0,
           ),
-          boxShadow: widget.isCurrent
+          boxShadow: isCurrent
               ? [
                   BoxShadow(
                     color: const Color(0xFF1E90FF).withValues(alpha: 0.35),
@@ -249,32 +217,19 @@ class _ThumbnailCardState extends State<_ThumbnailCard> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: FutureBuilder<Uint8List?>(
-                future: _thumbnailFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  if (snapshot.hasData && snapshot.data != null) {
-                    return Image.memory(
-                      snapshot.data!,
-                      fit: BoxFit.contain,
-                    );
-                  }
-                  return Center(
-                    child: Icon(
-                      Icons.description_outlined,
-                      size: 32,
-                      color: theme.colorScheme.outlineVariant,
-                    ),
-                  );
-                },
+              child: SharedPdfThumbnail.page(
+                filePath: filePath,
+                lastModifiedMillis: lastModifiedMillis,
+                pageNumber: pageNumber,
+                cacheWidth: 260,
+                spinnerSize: 18,
+                fallbackBuilder: (_) => Center(
+                  child: Icon(
+                    Icons.description_outlined,
+                    size: 32,
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
               ),
             ),
             Positioned(
@@ -284,12 +239,12 @@ class _ThumbnailCardState extends State<_ThumbnailCard> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 decoration: BoxDecoration(
-                  color: widget.isCurrent
+                  color: isCurrent
                       ? const Color(0xFF1E90FF).withValues(alpha: 0.9)
                       : Colors.black.withValues(alpha: 0.6),
                 ),
                 child: Text(
-                  '${widget.pageNumber}',
+                  '$pageNumber',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,

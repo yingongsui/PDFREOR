@@ -2,7 +2,7 @@ name: pdfreor
 description: "A fast, responsive PDF reader and stylus annotation editor for Android tablets."
 publish_to: 'none'
 
-version: 2.3.0+2030
+version: 2.4.0+2040
 
 environment:
   sdk: ^3.12.2
@@ -16,7 +16,6 @@ dependencies:
   file_picker: ^13.3.2
   intl: ^0.20.3
   open_filex: ^5.0.0
-  pdfx: ^2.11.0
   share_plus: ^13.3.1
   path: ^1.9.1
   crypto: ^3.0.8

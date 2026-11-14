@@ -14,7 +14,7 @@ void main() {
     final modified = defaultSettings.copyWith(
       activeColor: const Color(0xFF2196F3),
       activeStrokeWidth: 5.5,
-      activeShape: ShapeType.arrow,
+      activeShape: ShapeType.roundedRectangle,
       latexQuickOperators: [r'\sum', r'\int', r'\alpha'],
     );
 
@@ -23,8 +23,24 @@ void main() {
 
     expect(restored.activeColor.toARGB32(), const Color(0xFF2196F3).toARGB32());
     expect(restored.activeStrokeWidth, 5.5);
-    expect(restored.activeShape, ShapeType.arrow);
+    expect(restored.activeShape, ShapeType.roundedRectangle);
     expect(restored.latexQuickOperators, [r'\sum', r'\int', r'\alpha']);
+  });
+
+  test('EditorSettings.fromJson guards negative and out-of-range enum indices', () {
+    final restored = EditorSettings.fromJson({
+      'activeShape': -3,
+      'textBoxFont': 999,
+    });
+    expect(restored.activeShape, ShapeType.rectangle);
+    expect(restored.textBoxFont, AppFontFamily.sansSerif);
+
+    final restoredNegativeFont = EditorSettings.fromJson({
+      'activeShape': 999,
+      'textBoxFont': -1,
+    });
+    expect(restoredNegativeFont.activeShape, ShapeType.rectangle);
+    expect(restoredNegativeFont.textBoxFont, AppFontFamily.sansSerif);
   });
 }
 

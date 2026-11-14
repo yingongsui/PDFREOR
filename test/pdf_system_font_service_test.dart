@@ -126,6 +126,19 @@ void main() {
         ctx,
       );
       expect(westMono?.fontFilePath, p.join(tempDir.path, 'DroidSansMono.ttf'));
+
+      // 7. CJK SansSerif query must not match serif substring falsely
+      final cjkSansSerif = resolver.resolve(
+        const PdfFontQuery(
+          face: 'SimHei-SansSerif',
+          weight: 400,
+          isItalic: false,
+          charset: PdfFontCharset.gb2312,
+          pitchFamily: 0,
+        ),
+        ctx,
+      );
+      expect(cjkSansSerif?.fontFilePath, p.join(tempDir.path, 'NotoSansCJK-Regular.ttc'));
     } finally {
       await tempDir.delete(recursive: true);
     }

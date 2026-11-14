@@ -24,18 +24,27 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     private val STYLUS_CHANNEL = "com.yin.pdfreor/stylus"
     private val INTENT_CHANNEL = "com.yin.pdfreor/intent"
+    private val MAX_CLIPBOARD_IMAGE_BYTES = 24 * 1024 * 1024
+    private val MAX_EXTERNAL_PDF_CACHE_FILES = 20
 
     private var stylusChannel: MethodChannel? = null
     private var intentChannel: MethodChannel? = null
     private var inputManager: InputManager? = null
     private var stylusNotified = false
+    @Volatile
     private var pendingPdfPath: String? = null
+    @Volatile
+    private var initialPdfConsumed = false
+    private val bgExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,6 +140,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         iChannel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "consumeInitialPdfPath" -> {
+                    initialPdfConsumed = true
                     val path = pendingPdfPath
                     pendingPdfPath = null
                     result.success(path)
@@ -153,6 +163,8 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                     try {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         val clip = clipboard.primaryClip
+                        var imageUri: Uri? = null
+                        var imageMime: String? = null
                         if (clip != null && clip.itemCount > 0) {
                             for (i in 0 until clip.itemCount) {
                                 val item = clip.getItemAt(i)
@@ -160,16 +172,33 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                                 if (uri != null) {
                                     val mime = contentResolver.getType(uri)
                                     if (mime == null || mime.startsWith("image/")) {
-                                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                        if (bytes != null && bytes.isNotEmpty()) {
-                                            result.success(compactClipboardImageBytes(bytes, mime))
-                                            return@setMethodCallHandler
-                                        }
+                                        imageUri = uri
+                                        imageMime = mime
+                                        break
                                     }
                                 }
                             }
                         }
-                        result.success(null)
+                        if (imageUri == null) {
+                            result.success(null)
+                        } else {
+                            val targetUri = imageUri
+                            val targetMime = imageMime
+                            bgExecutor.execute {
+                                var compacted: ByteArray? = null
+                                try {
+                                    val raw = readStreamBounded(targetUri, MAX_CLIPBOARD_IMAGE_BYTES)
+                                    if (raw != null && raw.isNotEmpty()) {
+                                        compacted = compactClipboardImageBytes(raw, targetMime)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("PdfReorClipboard", "Error reading clipboard image: $e")
+                                }
+                                runOnUiThread {
+                                    result.success(compacted)
+                                }
+                            }
+                        }
                     } catch (e: Exception) {
                         Log.e("PdfReorClipboard", "Error reading clipboard image: $e")
                         result.success(null)
@@ -250,6 +279,26 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                 }
             }
         }
+    }
+
+    private fun readStreamBounded(uri: Uri, maxBytes: Int): ByteArray? {
+        contentResolver.openInputStream(uri)?.use { input ->
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val read = input.read(buf)
+                if (read <= 0) break
+                total += read
+                if (total > maxBytes) {
+                    Log.w("PdfReorClipboard", "Clipboard image exceeds $maxBytes bytes limit")
+                    return null
+                }
+                out.write(buf, 0, read)
+            }
+            return out.toByteArray()
+        }
+        return null
     }
 
     private fun compactClipboardImageBytes(bytes: ByteArray, mime: String?): ByteArray {
@@ -356,12 +405,33 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         if (incoming.action != Intent.ACTION_VIEW) return
         val uri = incoming.data ?: return
 
-        val resolvedPath = resolvePdfUriToPath(uri) ?: return
-        if (notifyLive && intentChannel != null) {
-            intentChannel?.invokeMethod("onOpenExternalPdf", resolvedPath)
-        } else {
-            pendingPdfPath = resolvedPath
+        bgExecutor.execute {
+            val resolvedPath = resolvePdfUriToPath(uri) ?: return@execute
+            runOnUiThread {
+                if ((notifyLive || initialPdfConsumed) && intentChannel != null) {
+                    intentChannel?.invokeMethod("onOpenExternalPdf", resolvedPath)
+                } else {
+                    pendingPdfPath = resolvedPath
+                }
+            }
         }
+    }
+
+    private fun shortUriHash(raw: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+        return digest.take(6).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun pruneExternalPdfCache(importDir: File) {
+        try {
+            val files = importDir.listFiles()?.filter { it.isFile } ?: return
+            if (files.size <= MAX_EXTERNAL_PDF_CACHE_FILES) return
+            val sorted = files.sortedBy { it.lastModified() }
+            val deleteCount = sorted.size - MAX_EXTERNAL_PDF_CACHE_FILES
+            for (i in 0 until deleteCount) {
+                sorted[i].delete()
+            }
+        } catch (_: Exception) {}
     }
 
     private fun resolvePdfUriToPath(uri: Uri): String? {
@@ -417,15 +487,27 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
                 if (!importDir.exists()) {
                     importDir.mkdirs()
                 }
-                val destFile = File(importDir, safeName)
+                val uniqueName = "${shortUriHash(uri.toString())}_$safeName"
+                val destFile = File(importDir, uniqueName)
+                val tempFile = File(importDir, "$uniqueName.tmp")
                 contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(destFile).use { output ->
+                    FileOutputStream(tempFile).use { output ->
                         input.copyTo(output)
                         output.fd.sync()
                     }
                 }
-                if (destFile.exists() && destFile.length() > 0L) {
+                if (tempFile.exists() && tempFile.length() > 0L) {
+                    if (destFile.exists()) {
+                        destFile.delete()
+                    }
+                    if (!tempFile.renameTo(destFile)) {
+                        tempFile.copyTo(destFile, overwrite = true)
+                        tempFile.delete()
+                    }
+                    pruneExternalPdfCache(importDir)
                     return destFile.absolutePath
+                } else {
+                    tempFile.delete()
                 }
             }
         } catch (e: Exception) {
@@ -436,6 +518,7 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
 
     override fun onDestroy() {
         inputManager?.unregisterInputDeviceListener(this)
+        bgExecutor.shutdownNow()
         super.onDestroy()
     }
 
