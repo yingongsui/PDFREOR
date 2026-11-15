@@ -164,6 +164,9 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     final isStylus = isStylusPointer(event);
     if (isStylus) {
       onStylusDetected?.call();
+    } else if ((event.buttons & kSecondaryMouseButton) != 0) {
+      // Reserve mouse right-click for context menus rather than drawing/erasing.
+      return;
     }
 
     final isOneShot = oneShotShape != null;

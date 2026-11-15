@@ -9,6 +9,12 @@ bool isStylusPointer(PointerEvent event) {
 }
 
 bool isEraserButtonPressed(PointerEvent event) {
+  if (event.kind == PointerDeviceKind.invertedStylus) {
+    return true;
+  }
+  if (!isStylusPointer(event)) {
+    return false;
+  }
   return (event.buttons &
           (kPrimaryStylusButton | kSecondaryStylusButton | kSecondaryMouseButton)) !=
       0;
