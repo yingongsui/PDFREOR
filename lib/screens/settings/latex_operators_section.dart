@@ -212,31 +212,60 @@ class LatexOperatorsCard extends StatelessWidget {
                     },
                     builder: (context, candidateData, rejectedData) {
                       final isTargeted = candidateData.isNotEmpty;
-                      final chipWidget = InputChip(
-                        avatar: Icon(
-                          Icons.drag_indicator_rounded,
-                          size: 14,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                        ),
-                        label: Math.tex(
-                          operators[i],
-                          textStyle: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          mathStyle: MathStyle.display,
-                          onErrorFallback: (_) => Text(
-                            operators[i],
-                            style: const TextStyle(fontSize: 12),
+                      final chipWidget = Container(
+                        constraints: const BoxConstraints(minHeight: 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant,
                           ),
                         ),
-                        deleteIcon: const Icon(Icons.close_rounded, size: 14),
-                        onDeleted: () async {
-                          final updatedList = List<String>.from(operators)..removeAt(i);
-                          await onSettingsUpdated(
-                            editorSettings.copyWith(latexQuickOperators: updatedList),
-                          );
-                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.drag_indicator_rounded,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(width: 6),
+                            Math.tex(
+                              operators[i],
+                              textStyle: TextStyle(
+                                fontSize: 13,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              mathStyle: MathStyle.display,
+                              onErrorFallback: (_) => Text(
+                                operators[i],
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Tooltip(
+                              message: 'Delete',
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () async {
+                                  final updatedList = List<String>.from(operators)..removeAt(i);
+                                  await onSettingsUpdated(
+                                    editorSettings.copyWith(latexQuickOperators: updatedList),
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 14,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       );
 
                       return LongPressDraggable<int>(
