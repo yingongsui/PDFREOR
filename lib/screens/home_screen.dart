@@ -148,6 +148,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _closeSearch() {
+    _searchDebounceTimer?.cancel();
+    _refresh(() {
+      _isSearching = false;
+      _searchController.clear();
+      _applyFilterAndSort();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -159,11 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_isSelectionMode) {
           _exitSelectionMode();
         } else if (_isSearching) {
-          setState(() {
-            _isSearching = false;
-            _searchController.clear();
-            _applyFilterAndSort();
-          });
+          _closeSearch();
         }
       },
       child: Scaffold(

@@ -212,6 +212,36 @@ class PdfTabContentState extends State<PdfTabContent> {
   bool _stylusOnlyMode = false;
   AppFontFamily _textBoxFont = AppFontFamily.sansSerif;
 
+  void _selectAnnotation({
+    String? textAnnotationId,
+    String? shapeId,
+    String? strokeId,
+    String? imageId,
+    String? editingTextBoxId,
+  }) {
+    _selectedTextAnnotationId = textAnnotationId;
+    _selectedShapeId = shapeId;
+    _selectedStrokeId = strokeId;
+    _selectedImageId = imageId;
+    _editingTextBoxId = editingTextBoxId;
+  }
+
+  void _finishTextBoxEditing() {
+    _editingTextBoxId = null;
+    if (_activeTool == EditorTool.textBox || _activeTool == EditorTool.latexBox) {
+      _activeTool = EditorTool.select;
+    }
+  }
+
+  void _dismissContextMenuIfOpen() {
+    final menuCtx = _contextMenuDialogContext;
+    if (menuCtx == null) return;
+    try {
+      Navigator.of(menuCtx).pop();
+    } catch (_) {}
+    _contextMenuDialogContext = null;
+  }
+
   void _applyEditorSettings(EditorSettings s) {
     _activeColor = s.activeColor;
     _highlightColor = s.highlightColor;

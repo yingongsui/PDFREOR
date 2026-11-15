@@ -14,11 +14,25 @@ class PagePictureEntry {
 class SavedLayerPictureCache {
   Map<int, PagePictureEntry> _entries = {};
   DrawingController? _builtForController;
-  int _version = 0;
-  int _builtVersion = -1;
+  int _builtEpoch = -1;
+  Map<int, int> _builtPageVersions = {};
+
+  static final Paint _highlightPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..blendMode = BlendMode.multiply;
+  static final Paint _underlinePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.0;
+  static final Paint _strikePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.8;
+  static final Paint _strokePaint = Paint()
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  static final Paint _dotPaint = Paint()..style = PaintingStyle.fill;
 
   void invalidate() {
-    _version++;
     _disposePictures();
   }
 
@@ -29,115 +43,163 @@ class SavedLayerPictureCache {
       }
       _entries = {};
     }
-    _builtVersion = -1;
+    _builtEpoch = -1;
+    _builtPageVersions = {};
+  }
+
+  PagePictureEntry? _recordPageEntry(
+    List<DrawnTextAnnotation>? pageAnnotations,
+    List<DrawingStroke>? pageStrokes,
+  ) {
+    Rect? bounds;
+    void expand(Rect r) {
+      bounds = bounds == null ? r : bounds!.expandToInclude(r);
+    }
+
+    if (pageAnnotations != null) {
+      for (final ta in pageAnnotations) {
+        expand(ta.getBounds().inflate(4.0));
+      }
+    }
+    if (pageStrokes != null) {
+      for (final st in pageStrokes) {
+        if (st.points.isNotEmpty) {
+          expand(st.getBounds().inflate(st.strokeWidth + 8.0));
+        }
+      }
+    }
+    if (bounds == null) return null;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    if (pageAnnotations != null) {
+      for (final ta in pageAnnotations) {
+        switch (ta.type) {
+          case TextAnnotationType.highlight:
+            _highlightPaint.color = ta.color.withValues(alpha: 0.38);
+            for (final rect in ta.rects) {
+              canvas.drawRect(rect, _highlightPaint);
+            }
+            break;
+          case TextAnnotationType.underline:
+            _underlinePaint.color = ta.color;
+            for (final rect in ta.rects) {
+              canvas.drawLine(rect.bottomLeft, rect.bottomRight, _underlinePaint);
+            }
+            break;
+          case TextAnnotationType.strikethrough:
+            _strikePaint.color = ta.color;
+            for (final rect in ta.rects) {
+              final midY = (rect.top + rect.bottom) * 0.5;
+              canvas.drawLine(Offset(rect.left, midY), Offset(rect.right, midY), _strikePaint);
+            }
+            break;
+        }
+      }
+    }
+
+    if (pageStrokes != null) {
+      for (final st in pageStrokes) {
+        if (st.points.isEmpty) continue;
+        if (st.points.length == 1) {
+          _dotPaint.color = st.color;
+          final p = st.points.first;
+          final r = math.max(0.5, (st.strokeWidth * p.pressure) * 0.5);
+          canvas.drawCircle(p.offset, r, _dotPaint);
+          continue;
+        }
+        _strokePaint.color = st.color;
+        final batches = st.getPathBatches();
+        for (final batch in batches) {
+          _strokePaint.strokeWidth = batch.strokeWidth;
+          canvas.drawPath(batch.path, _strokePaint);
+        }
+      }
+    }
+
+    return PagePictureEntry(bounds!, recorder.endRecording());
   }
 
   Map<int, PagePictureEntry> getOrBuild(DrawingController controller) {
-    if (_builtForController == controller && _builtVersion == _version) {
+    final fullRebuild =
+        !identical(_builtForController, controller) ||
+        _builtEpoch != controller.savedEpoch;
+
+    if (fullRebuild) {
+      _disposePictures();
+      _builtForController = controller;
+      _builtEpoch = controller.savedEpoch;
+      _builtPageVersions = Map<int, int>.of(controller.savedPageVersions);
+
+      if (controller.strokes.isEmpty && controller.textAnnotations.isEmpty) {
+        return _entries;
+      }
+
+      final annotationsByPage = <int, List<DrawnTextAnnotation>>{};
+      final strokesByPage = <int, List<DrawingStroke>>{};
+      final pages = <int>{};
+
+      for (final ta in controller.textAnnotations) {
+        annotationsByPage.putIfAbsent(ta.pageNumber, () => []).add(ta);
+        pages.add(ta.pageNumber);
+      }
+      for (final st in controller.strokes) {
+        strokesByPage.putIfAbsent(st.pageNumber, () => []).add(st);
+        pages.add(st.pageNumber);
+      }
+
+      final nextEntries = <int, PagePictureEntry>{};
+      for (final pageNumber in pages) {
+        final entry = _recordPageEntry(
+          annotationsByPage[pageNumber],
+          strokesByPage[pageNumber],
+        );
+        if (entry != null) {
+          nextEntries[pageNumber] = entry;
+        }
+      }
+      _entries = nextEntries;
       return _entries;
     }
 
-    _disposePictures();
-    _builtForController = controller;
-    _builtVersion = _version;
-
-    if (controller.strokes.isEmpty && controller.textAnnotations.isEmpty) {
+    // Incremental per-page rebuild: only touch pages whose revision changed.
+    final currentVersions = controller.savedPageVersions;
+    Set<int>? dirtyPages;
+    for (final e in currentVersions.entries) {
+      if (_builtPageVersions[e.key] != e.value) {
+        (dirtyPages ??= <int>{}).add(e.key);
+      }
+    }
+    if (dirtyPages == null) {
       return _entries;
     }
 
     final annotationsByPage = <int, List<DrawnTextAnnotation>>{};
     final strokesByPage = <int, List<DrawingStroke>>{};
-    final pageBounds = <int, Rect>{};
-
-    void expandPageBounds(int page, Rect r) {
-      final prev = pageBounds[page];
-      pageBounds[page] = prev == null ? r : prev.expandToInclude(r);
-    }
-
     for (final ta in controller.textAnnotations) {
-      annotationsByPage.putIfAbsent(ta.pageNumber, () => []).add(ta);
-      expandPageBounds(ta.pageNumber, ta.getBounds().inflate(4.0));
+      if (dirtyPages.contains(ta.pageNumber)) {
+        annotationsByPage.putIfAbsent(ta.pageNumber, () => []).add(ta);
+      }
     }
-
     for (final st in controller.strokes) {
-      strokesByPage.putIfAbsent(st.pageNumber, () => []).add(st);
-      expandPageBounds(st.pageNumber, st.getBounds().inflate(st.strokeWidth + 8.0));
+      if (dirtyPages.contains(st.pageNumber)) {
+        strokesByPage.putIfAbsent(st.pageNumber, () => []).add(st);
+      }
     }
 
-    final highlightPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..blendMode = BlendMode.multiply;
-    final underlinePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    final strikePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-    final strokePaint = Paint()
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    final dotPaint = Paint()..style = PaintingStyle.fill;
-
-    final nextEntries = <int, PagePictureEntry>{};
-    for (final pageNumber in pageBounds.keys) {
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      final pageAnnotations = annotationsByPage[pageNumber];
-      if (pageAnnotations != null) {
-        for (final ta in pageAnnotations) {
-          switch (ta.type) {
-            case TextAnnotationType.highlight:
-              highlightPaint.color = ta.color.withValues(alpha: 0.38);
-              for (final rect in ta.rects) {
-                canvas.drawRect(rect, highlightPaint);
-              }
-              break;
-            case TextAnnotationType.underline:
-              underlinePaint.color = ta.color;
-              for (final rect in ta.rects) {
-                canvas.drawLine(rect.bottomLeft, rect.bottomRight, underlinePaint);
-              }
-              break;
-            case TextAnnotationType.strikethrough:
-              strikePaint.color = ta.color;
-              for (final rect in ta.rects) {
-                final midY = (rect.top + rect.bottom) * 0.5;
-                canvas.drawLine(Offset(rect.left, midY), Offset(rect.right, midY), strikePaint);
-              }
-              break;
-          }
-        }
-      }
-
-      final pageStrokes = strokesByPage[pageNumber];
-      if (pageStrokes != null) {
-        for (final st in pageStrokes) {
-          if (st.points.isEmpty) continue;
-          if (st.points.length == 1) {
-            dotPaint.color = st.color;
-            final p = st.points.first;
-            final r = math.max(0.5, (st.strokeWidth * p.pressure) * 0.5);
-            canvas.drawCircle(p.offset, r, dotPaint);
-            continue;
-          }
-          strokePaint.color = st.color;
-          final batches = st.getPathBatches();
-          for (final batch in batches) {
-            strokePaint.strokeWidth = batch.strokeWidth;
-            canvas.drawPath(batch.path, strokePaint);
-          }
-        }
-      }
-
-      nextEntries[pageNumber] = PagePictureEntry(
-        pageBounds[pageNumber]!,
-        recorder.endRecording(),
+    for (final pageNumber in dirtyPages) {
+      _entries.remove(pageNumber)?.picture.dispose();
+      final entry = _recordPageEntry(
+        annotationsByPage[pageNumber],
+        strokesByPage[pageNumber],
       );
+      if (entry != null) {
+        _entries[pageNumber] = entry;
+      }
+      _builtPageVersions[pageNumber] = currentVersions[pageNumber] ?? 0;
     }
 
-    _entries = nextEntries;
     return _entries;
   }
 
@@ -147,27 +209,26 @@ class SavedLayerPictureCache {
   }
 }
 
+final Paint _activeDotPaint = Paint()..style = PaintingStyle.fill;
+final Paint _activeStrokePaint = Paint()
+  ..strokeCap = StrokeCap.round
+  ..strokeJoin = StrokeJoin.round
+  ..style = PaintingStyle.stroke;
+
 void paintStrokePoints(Canvas canvas, List<StrokePoint> points, Color color, double baseWidth) {
   if (points.isEmpty) return;
   if (points.length == 1) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+    _activeDotPaint.color = color;
     final r = math.max(0.5, (baseWidth * points.first.pressure) * 0.5);
-    canvas.drawCircle(points.first.offset, r, paint);
+    canvas.drawCircle(points.first.offset, r, _activeDotPaint);
     return;
   }
 
-  final paint = Paint()
-    ..color = color
-    ..strokeCap = StrokeCap.round
-    ..strokeJoin = StrokeJoin.round
-    ..style = PaintingStyle.stroke;
-
+  _activeStrokePaint.color = color;
   final batches = DrawingStroke.buildStrokePathBatches(points, baseWidth);
   for (final batch in batches) {
-    paint.strokeWidth = batch.strokeWidth;
-    canvas.drawPath(batch.path, paint);
+    _activeStrokePaint.strokeWidth = batch.strokeWidth;
+    canvas.drawPath(batch.path, _activeStrokePaint);
   }
 }
 

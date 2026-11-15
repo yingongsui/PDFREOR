@@ -47,10 +47,14 @@ class PdfEditableLayerHelper {
   /// before drawing annotations so Syncfusion's wrapper streams and newly created
   /// annotation resources can be tagged accurately and stripped cleanly on reopen.
   static Map<int, PagePreDrawSnapshot> capturePreDrawSnapshots(
-    sf.PdfDocument doc,
-  ) {
+    sf.PdfDocument doc, {
+    Set<int>? targetPageIndices,
+  }) {
     final result = <int, PagePreDrawSnapshot>{};
     for (int p = 0; p < doc.pages.count; p++) {
+      if (targetPageIndices != null && !targetPageIndices.contains(p)) {
+        continue;
+      }
       final pageHelper = PdfPageHelper.getHelper(doc.pages[p]);
       final streams = Set<PdfStream>.identity();
       if (pageHelper.dictionary?.containsKey(PdfName('Contents')) == true) {

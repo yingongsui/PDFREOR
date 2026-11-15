@@ -105,8 +105,7 @@ class _ImageCanvasItemState extends State<ImageCanvasItem> {
   }
 
   double get _currentScale =>
-      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0)
-          .clamp(0.2, 5.0);
+      canvasScaleFromController(widget.transformationController);
 
   @override
   Widget build(BuildContext context) {

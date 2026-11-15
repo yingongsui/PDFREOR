@@ -43,10 +43,7 @@ class AtomicFileStore {
   }
 
   static Future<void> _writeBytesInternal(File targetFile, List<int> bytes) async {
-    final parent = targetFile.parent;
-    if (!await parent.exists()) {
-      await parent.create(recursive: true);
-    }
+    await targetFile.parent.create(recursive: true);
     final seq = _tempFileSeq++;
     final tempPath =
         '${targetFile.path}.tmp.${DateTime.now().microsecondsSinceEpoch}_$seq';
@@ -66,9 +63,6 @@ class AtomicFileStore {
         // Fallback for filesystems (e.g., certain Android SD card FUSE mounts)
         // that disallow rename over an existing file
         await tempFile.copy(targetFile.path);
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
       }
     } finally {
       try {

@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -39,8 +38,6 @@ class ImageHeaderInfo {
 
 class PdfImageOptimizer {
   PdfImageOptimizer._();
-
-  static const int _isolatePixelThreshold = 16384;
 
   /// Computes a full-buffer 64-bit FNV-1a fingerprint mixed with byte length
   /// for collision-free deduplication of identical images during PDF export.
@@ -160,19 +157,10 @@ class PdfImageOptimizer {
     required Size logicalSize,
     bool cropTransparentMargins = false,
   }) async {
-    if (width * height < _isolatePixelThreshold) {
-      return encodeOptimizedPngFromRgba(
-        rawStraightRgba: rawStraightRgba,
-        width: width,
-        height: height,
-        logicalSize: logicalSize,
-        cropTransparentMargins: cropTransparentMargins,
-      );
-    }
-
     final double logicalW = logicalSize.width;
     final double logicalH = logicalSize.height;
-    final payload = await Isolate.run(
+    final payload = await PngEncoder.runWithThreshold(
+      width * height,
       () => PngEncoder.encodeOptimizedPngIsolateSafe(
         rawStraightRgba: rawStraightRgba,
         width: width,
@@ -265,12 +253,7 @@ class PdfImageOptimizer {
         final byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
         if (byteData == null) return imageBytes;
 
-        final rawBytes = Uint8List.fromList(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        );
+        final rawBytes = PngEncoder.byteDataToUint8List(byteData);
         final optimized = await encodeOptimizedPngAsync(
           rawStraightRgba: rawBytes,
           width: decoded.width,

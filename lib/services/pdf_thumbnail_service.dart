@@ -94,6 +94,7 @@ class PdfThumbnailService {
       LinkedHashMap<String, Uint8List>();
   final Map<String, Future<Uint8List?>> _inFlight = {};
   final Map<String, Set<String>> _diskCachePathsBySource = {};
+  final Map<String, String> _pathHashCache = {};
   final Map<String, _PdfDocSession> _sessions = {};
   final Map<String, int> _generationByPath = {};
   int _globalEpoch = 0;
@@ -155,7 +156,10 @@ class PdfThumbnailService {
   }
 
   String _getPathHash(String filePath) {
-    return md5.convert(utf8.encode(filePath)).toString();
+    return _pathHashCache.putIfAbsent(
+      filePath,
+      () => md5.convert(utf8.encode(filePath)).toString(),
+    );
   }
 
   double _effectiveTargetWidth(int pageNumber, double targetWidth) {
@@ -221,7 +225,9 @@ class PdfThumbnailService {
     try {
       return await future;
     } finally {
-      _inFlight.remove(memKey);
+      if (identical(_inFlight[memKey], future)) {
+        _inFlight.remove(memKey);
+      }
     }
   }
 
@@ -253,13 +259,15 @@ class PdfThumbnailService {
       );
       _trackDiskCacheFile(filePath, cacheFile.path);
 
-      if (await cacheFile.exists()) {
+      try {
         final bytes = await cacheFile.readAsBytes();
         if (_isEpochCurrent(filePath, pathEpoch, globalEpoch)) {
           _putInMemory(memKey, bytes);
           return bytes;
         }
         return null;
+      } on FileSystemException {
+        // Cache miss — render below.
       }
 
       final session = _getSession(filePath);
@@ -334,7 +342,7 @@ class PdfThumbnailService {
       final entries = <({File file, DateTime modified})>[];
       await for (final entity in dir.list(followLinks: false)) {
         if (entity is File) {
-          if (entity.path.endsWith('.tmp')) {
+          if (p.basename(entity.path).contains('.tmp.')) {
             try {
               await entity.delete();
             } catch (_) {}

@@ -84,35 +84,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           // Section: Permissions
           const SettingsSectionHeader(title: 'Permissions', icon: Icons.security_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: _hasPermission
-                              ? Colors.green.withValues(alpha: 0.12)
-                              : Colors.orange.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          _hasPermission ? Icons.check_circle_rounded : Icons.warning_rounded,
-                          color: _hasPermission ? Colors.green : Colors.orange,
-                          size: 24,
-                        ),
-                      ),
+          SettingsCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SettingsIconBadge(
+                      icon: _hasPermission ? Icons.check_circle_rounded : Icons.warning_rounded,
+                      color: _hasPermission ? Colors.green : Colors.orange,
+                      backgroundColor: _hasPermission
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : Colors.orange.withValues(alpha: 0.12),
+                      iconSize: 24,
+                      padding: 10,
+                      borderRadius: 12,
+                    ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -182,7 +170,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   ),
                 ],
               ),
-            ),
           ),
 
           const SizedBox(height: 24),
@@ -190,31 +177,16 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           // Section: Editor & Text Box Font
           const SettingsSectionHeader(title: 'Editor & Annotation', icon: Icons.edit_note_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.font_download_outlined, color: theme.colorScheme.primary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
+          SettingsCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    SettingsIconBadge(icon: Icons.font_download_outlined),
+                    SizedBox(width: 12),
+                    Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -252,12 +224,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       ),
                     ],
                     selected: {_editorSettings.textBoxFont},
-                    onSelectionChanged: (newSelection) async {
-                      final updated = _editorSettings.copyWith(textBoxFont: newSelection.first);
-                      setState(() {
-                        _editorSettings = updated;
-                      });
-                      await EditorSettingsService.saveSettings(updated);
+                    onSelectionChanged: (newSelection) {
+                      _updateEditorSettings(
+                        _editorSettings.copyWith(textBoxFont: newSelection.first),
+                      );
                     },
                   ),
                   const SizedBox(height: 12),
@@ -291,7 +261,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   ),
                 ],
               ),
-            ),
           ),
 
           const SizedBox(height: 12),
@@ -305,30 +274,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           const SizedBox(height: 12),
 
           // Annotation Persistence Mode Card
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.layers_rounded, color: theme.colorScheme.primary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
+          SettingsCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const SettingsIconBadge(icon: Icons.layers_rounded),
+                    const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -430,7 +384,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     ),
                 ],
               ),
-            ),
           ),
 
           const SizedBox(height: 24),
@@ -438,23 +391,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           // Section: Storage & Cache
           const SettingsSectionHeader(title: 'Storage & Maintenance', icon: Icons.storage_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
+          SettingsCard(
             child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.cleaning_services_rounded, color: theme.colorScheme.primary, size: 22),
-              ),
+              leading: const SettingsIconBadge(icon: Icons.cleaning_services_rounded),
               title: const Text('Clear Thumbnail Cache', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text('Free memory and reload document previews'),
               trailing: const Icon(Icons.chevron_right_rounded),
@@ -467,19 +406,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           // Section: About
           const SettingsSectionHeader(title: 'About', icon: Icons.info_outline_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          SettingsCard(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                   Row(
                     children: [
                       Container(
@@ -598,7 +529,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   const SettingsFeatureRow(icon: Icons.folder_rounded, text: 'Folder grouping & library organization'),
                 ],
               ),
-            ),
           ),
           const SizedBox(height: 32),
         ],

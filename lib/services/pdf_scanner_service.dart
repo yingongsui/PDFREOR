@@ -219,13 +219,6 @@ class PdfScannerService {
           }
         }
       } catch (_) {}
-    } else {
-      final docDir = await getApplicationDocumentsDirectory();
-      directoriesToScan.add(docDir);
-      final downloadDir = await getDownloadsDirectory();
-      if (downloadDir != null) {
-        directoriesToScan.add(downloadDir);
-      }
     }
 
     await _ensureLibraryLoaded();
@@ -319,11 +312,7 @@ class PdfScannerService {
     const skipFolders = {
       'Android/data',
       'Android/obb',
-      '.thumbnails',
-      '.cache',
-      '.trash',
       'node_modules',
-      '.git',
     };
 
     final Map<String, PdfFileInfo> foundFiles = {};

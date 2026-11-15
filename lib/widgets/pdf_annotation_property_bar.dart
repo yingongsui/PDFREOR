@@ -273,7 +273,7 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
         _buildStepperButton(
           icon: Icons.remove,
           theme: theme,
-          onTap: onDecrement ?? () {},
+          onTap: onDecrement,
         ),
         SizedBox(
           width: labelWidth,
@@ -290,7 +290,7 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
         _buildStepperButton(
           icon: Icons.add,
           theme: theme,
-          onTap: onIncrement ?? () {},
+          onTap: onIncrement,
         ),
       ],
     );
@@ -307,8 +307,9 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
   Widget _buildStepperButton({
     required IconData icon,
     required ThemeData theme,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
+    final enabled = onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -318,9 +319,17 @@ class PdfAnnotationPropertyBar extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: enabled ? 0.5 : 0.25,
+          ),
         ),
-        child: Icon(icon, size: 16, color: theme.colorScheme.onSurface),
+        child: Icon(
+          icon,
+          size: 16,
+          color: theme.colorScheme.onSurface.withValues(
+            alpha: enabled ? 1.0 : 0.38,
+          ),
+        ),
       ),
     );
   }

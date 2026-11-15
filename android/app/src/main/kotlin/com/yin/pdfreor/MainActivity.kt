@@ -559,23 +559,22 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
         }
     }
 
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+    private fun notifyStylusFromMotionEvent(event: MotionEvent) {
         if (!stylusNotified) {
             val toolType = event.getToolType(0)
             if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
                 checkAndNotifyStylus()
             }
         }
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        notifyStylusFromMotionEvent(event)
         return super.dispatchGenericMotionEvent(event)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (!stylusNotified) {
-            val toolType = event.getToolType(0)
-            if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
-                checkAndNotifyStylus()
-            }
-        }
+        notifyStylusFromMotionEvent(event)
         return super.dispatchTouchEvent(event)
     }
 

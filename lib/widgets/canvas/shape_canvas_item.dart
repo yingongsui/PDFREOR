@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/drawing_controller.dart';
 import '../../models/editor_models.dart';
 import 'canvas_item_shared.dart';
+import 'stylus_drawing_gesture_recognizer.dart';
 
 class _SingleShapePainter extends CustomPainter {
   final ShapeType type;
@@ -104,7 +105,7 @@ class ShapeCanvasItem extends StatefulWidget {
 }
 
 class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
-  static const double kPadding = 48.0;
+  static const double kPadding = kShapeCanvasPadding;
 
   Offset? _dragStartOriginalStart;
   Offset? _dragStartOriginalEnd;
@@ -126,8 +127,60 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
   }
 
   double get _currentScale =>
-      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0)
-          .clamp(0.2, 5.0);
+      canvasScaleFromController(widget.transformationController);
+
+  List<Widget> _buildCornerHandles({
+    required double minX,
+    required double maxX,
+    required double minY,
+    required double maxY,
+    required double width,
+    required double height,
+    required double handleTouchSize,
+    required double handleVisualSize,
+    required double handleBorderWidth,
+  }) {
+    final corners = [
+      (pos: const Offset(kPadding, kPadding), isLeft: true, isTop: true),
+      (pos: Offset(kPadding + width, kPadding), isLeft: false, isTop: true),
+      (pos: Offset(kPadding, kPadding + height), isLeft: true, isTop: false),
+      (
+        pos: Offset(kPadding + width, kPadding + height),
+        isLeft: false,
+        isTop: false,
+      ),
+    ];
+    return [
+      for (final corner in corners)
+        CanvasDragHandle(
+          position: corner.pos,
+          touchSize: handleTouchSize,
+          visualSize: handleVisualSize,
+          borderWidth: handleBorderWidth,
+          onPanStart: (_) => _startDrag(),
+          onPanUpdate: (details) {
+            final deltaDoc = details.delta / _currentScale;
+            final nextLeft = corner.isLeft
+                ? math.min(minX + deltaDoc.dx, maxX - 12.0)
+                : minX;
+            final nextRight = corner.isLeft
+                ? maxX
+                : math.max(maxX + deltaDoc.dx, minX + 12.0);
+            final nextTop = corner.isTop
+                ? math.min(minY + deltaDoc.dy, maxY - 12.0)
+                : minY;
+            final nextBottom = corner.isTop
+                ? maxY
+                : math.max(maxY + deltaDoc.dy, minY + 12.0);
+            widget.onUpdate(
+              Offset(nextLeft, nextTop),
+              Offset(nextRight, nextBottom),
+            );
+          },
+          onPanEnd: _endDrag,
+        ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -230,64 +283,19 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
               ),
             ),
           if (widget.isSelected) ...[
-            if (isRectOrCircle) ...[
-              CanvasDragHandle(
-                position: const Offset(kPadding, kPadding),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(newLeft, newTop), Offset(maxX, maxY));
-                },
-                onPanEnd: _endDrag,
-              ),
-              CanvasDragHandle(
-                position: Offset(kPadding + width, kPadding),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(minX, newTop), Offset(newRight, maxY));
-                },
-                onPanEnd: _endDrag,
-              ),
-              CanvasDragHandle(
-                position: Offset(kPadding, kPadding + height),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(newLeft, minY), Offset(maxX, newBottom));
-                },
-                onPanEnd: _endDrag,
-              ),
-              CanvasDragHandle(
-                position: Offset(kPadding + width, kPadding + height),
-                touchSize: handleTouchSize,
-                visualSize: handleVisualSize,
-                borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(minX, minY), Offset(newRight, newBottom));
-                },
-                onPanEnd: _endDrag,
-              ),
-            ] else ...[
+            if (isRectOrCircle)
+              ..._buildCornerHandles(
+                minX: minX,
+                maxX: maxX,
+                minY: minY,
+                maxY: maxY,
+                width: width,
+                height: height,
+                handleTouchSize: handleTouchSize,
+                handleVisualSize: handleVisualSize,
+                handleBorderWidth: handleBorderWidth,
+              )
+            else ...[
               CanvasDragHandle(
                 position: localStart,
                 touchSize: handleTouchSize,

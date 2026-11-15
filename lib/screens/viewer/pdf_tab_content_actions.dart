@@ -305,7 +305,6 @@ extension _PdfTabContentActions on PdfTabContentState {
       });
       await WidgetsBinding.instance.endOfFrame;
     }
-    _originalBaseBytes ??= await File(widget.file.path).readAsBytes();
     _syncDocumentLayoutFromController();
     return _baseNormalizedWidth ?? (_canvasSize.width > 0 ? _canvasSize.width : 400.0);
   }
@@ -322,10 +321,11 @@ extension _PdfTabContentActions on PdfTabContentState {
       final file = File(widget.file.path);
       final hasPageStructureChange = _deletedZeroIndexedPages.isNotEmpty || _addedPagesCount > 0;
       final viewportWidth = await _preparePdfExportViewportWidth();
+      final baseBytes = _originalBaseBytes ?? await file.readAsBytes();
 
       final finalBytes = await PdfExportService.exportToFile(
         file: file,
-        baseBytes: _originalBaseBytes!,
+        baseBytes: baseBytes,
         drawingController: _drawingController,
         viewportWidth: viewportWidth,
         textBoxFont: _textBoxFont,
@@ -375,12 +375,12 @@ extension _PdfTabContentActions on PdfTabContentState {
             _pendingRestoredBundle = reinspected.bundle;
             _useInMemoryCleanBaseRef = true;
           } else {
-            _originalBaseBytes = finalBytes;
+            _originalBaseBytes = null;
             _pendingRestoredBundle = null;
             _useInMemoryCleanBaseRef = false;
           }
         } else {
-          _originalBaseBytes = finalBytes;
+          _originalBaseBytes = null;
           _pendingRestoredBundle = null;
           _useInMemoryCleanBaseRef = false;
         }
@@ -495,9 +495,11 @@ extension _PdfTabContentActions on PdfTabContentState {
 
     try {
       final viewportWidth = await _preparePdfExportViewportWidth();
+      final baseBytes =
+          _originalBaseBytes ?? await File(widget.file.path).readAsBytes();
 
       final flattenedBytes = await PdfExportService.buildExportBytes(
-        baseBytes: _originalBaseBytes!,
+        baseBytes: baseBytes,
         drawingController: _drawingController,
         viewportWidth: viewportWidth,
         textBoxFont: _textBoxFont,
@@ -518,10 +520,6 @@ extension _PdfTabContentActions on PdfTabContentState {
         bytes: flattenedBytes,
       );
       if (savedUri == null) return;
-
-      if (!Platform.isAndroid && !Platform.isIOS) {
-        await File.fromUri(savedUri).writeAsBytes(flattenedBytes, flush: true);
-      }
 
       _showViewerSnackBar(
         'Standard flattened PDF exported!',

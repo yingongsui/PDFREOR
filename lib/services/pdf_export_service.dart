@@ -15,6 +15,7 @@ import 'export/pdf_export_models.dart';
 import 'export/pdf_export_worker.dart';
 import 'latex_rasterizer.dart';
 import 'pdf_image_optimizer.dart';
+import 'png_encoder.dart';
 
 class PdfInspectResult {
   final bool hasEditablePayload;
@@ -300,12 +301,7 @@ class PdfExportService {
         img = await picture.toImage(pWidth, pHeight);
         final rawData = await img.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
         if (rawData != null) {
-          final rawBytes = Uint8List.fromList(
-            rawData.buffer.asUint8List(
-              rawData.offsetInBytes,
-              rawData.lengthInBytes,
-            ),
-          );
+          final rawBytes = PngEncoder.byteDataToUint8List(rawData);
           final optPng = await PdfImageOptimizer.encodeOptimizedPngAsync(
             rawStraightRgba: rawBytes,
             width: pWidth,
@@ -360,12 +356,10 @@ class PdfExportService {
           final stripped = PdfEditableLayerHelper.stripAnnotationStreams(doc);
           final removed = PdfEditableLayerHelper.removeAnnotationAttachments(doc);
           if (stripped || removed) {
-            doc.compressionLevel = sf.PdfCompressionLevel.best;
-            doc.fileStructure.crossReferenceType =
-                sf.PdfCrossReferenceType.crossReferenceStream;
-            if (fileBytes.length <= 25 * 1024 * 1024) {
-              doc.fileStructure.incrementalUpdate = false;
-            }
+            geom.configurePdfSaveStructure(
+              doc,
+              disableIncrementalUpdate: fileBytes.length <= 25 * 1024 * 1024,
+            );
             cleanBaseBytes = Uint8List.fromList(doc.saveAsBytesSync());
           } else {
             cleanBaseBytes = fileBytes;

@@ -32,6 +32,65 @@ class SettingsSectionHeader extends StatelessWidget {
   }
 }
 
+class SettingsCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  const SettingsCard({
+    super.key,
+    required this.child,
+    this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: padding != null ? Padding(padding: padding!, child: child) : child,
+    );
+  }
+}
+
+class SettingsIconBadge extends StatelessWidget {
+  final IconData icon;
+  final Color? color;
+  final Color? backgroundColor;
+  final double iconSize;
+  final double padding;
+  final double borderRadius;
+
+  const SettingsIconBadge({
+    super.key,
+    required this.icon,
+    this.color,
+    this.backgroundColor,
+    this.iconSize = 22,
+    this.padding = 8,
+    this.borderRadius = 10,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final effectiveColor = color ?? theme.colorScheme.primary;
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? effectiveColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      child: Icon(icon, color: effectiveColor, size: iconSize),
+    );
+  }
+}
+
 class SettingsFeatureRow extends StatelessWidget {
   final IconData icon;
   final String text;

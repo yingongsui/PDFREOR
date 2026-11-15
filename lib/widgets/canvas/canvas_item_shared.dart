@@ -5,6 +5,10 @@ import 'package:flutter/rendering.dart';
 /// TapRegion group id shared by editable elements and the top property bar.
 const String kEditableElementRegionGroup = 'EditableElementRegionGroup';
 
+/// Reads the clamped zoom scale from an optional [TransformationController].
+double canvasScaleFromController(TransformationController? controller) =>
+    (controller?.value.getMaxScaleOnAxis() ?? 1.0).clamp(0.2, 5.0);
+
 /// A Stack that does not reject hit-testing based on its own box size.
 /// Required both for document-space overlays (where pages extend far beyond
 /// viewport dimensions) and for item stacks with handles extending outside bounds.

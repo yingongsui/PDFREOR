@@ -106,6 +106,7 @@ class TextBoxCanvasItem extends StatefulWidget {
 class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
   late Offset _position;
   late TextEditingController _textController;
+  late ValueNotifier<String> _latexTextNotifier;
   late FocusNode _focusNode;
   late double _fontSize;
   late double _width;
@@ -115,8 +116,13 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
   double? _dragOrigWidth;
 
   double get _currentScale =>
-      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0)
-          .clamp(0.2, 5.0);
+      canvasScaleFromController(widget.transformationController);
+
+  void _syncLatexTextNotifier() {
+    if (_latexTextNotifier.value != _textController.text) {
+      _latexTextNotifier.value = _textController.text;
+    }
+  }
 
   @override
   void initState() {
@@ -125,6 +131,8 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
     _fontSize = widget.textBox.fontSize;
     _width = widget.textBox.width ?? (widget.textBox.isLatex ? 250.0 : 220.0);
     _textController = TextEditingController(text: widget.textBox.text);
+    _latexTextNotifier = ValueNotifier<String>(widget.textBox.text);
+    _textController.addListener(_syncLatexTextNotifier);
     _focusNode = FocusNode();
   }
 
@@ -210,6 +218,8 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
 
   @override
   void dispose() {
+    _textController.removeListener(_syncLatexTextNotifier);
+    _latexTextNotifier.dispose();
     _focusNode.dispose();
     _textController.dispose();
     super.dispose();
@@ -386,10 +396,10 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
             ),
             if (widget.textBox.isLatex) ...[
               const SizedBox(height: 6),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _textController,
-                builder: (context, value, _) {
-                  final raw = value.text.trim();
+              ValueListenableBuilder<String>(
+                valueListenable: _latexTextNotifier,
+                builder: (context, textValue, _) {
+                  final raw = textValue.trim();
                   return Container(
                     constraints: const BoxConstraints(minHeight: 38),
                     padding: const EdgeInsets.symmetric(
@@ -408,7 +418,7 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Math.tex(
-                          raw.isEmpty ? r'\dots' : value.text,
+                          raw.isEmpty ? r'\dots' : textValue,
                           textStyle: TextStyle(
                             color: widget.textBox.color,
                             fontSize: _fontSize,

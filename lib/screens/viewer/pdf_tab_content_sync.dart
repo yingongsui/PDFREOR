@@ -21,20 +21,14 @@ extension _PdfTabContentSync on PdfTabContentState {
   Future<void> _beginInitialDocumentOpen() async {
     final token = ++_initGeneration;
     try {
-      final results = await Future.wait([
-        EditorSettingsService.loadSettings(),
-        _pdfFile.readAsBytes(),
-      ]);
+      final settings = await EditorSettingsService.loadSettings();
       if (!mounted || token != _initGeneration) return;
 
-      final settings = results[0] as EditorSettings;
-      final fileBytes = results[1] as Uint8List;
       final mode = settings.annotationPersistenceMode;
-
       final inspected = mode == AnnotationPersistenceMode.alwaysFlattened
           ? null
           : await PdfExportService.inspectPdfDocument(
-              fileBytes,
+              await _pdfFile.readAsBytes(),
               prepareCleanBaseForEditable: true,
             );
       if (!mounted || token != _initGeneration) return;
@@ -59,7 +53,7 @@ extension _PdfTabContentSync on PdfTabContentState {
           inspected.hasEditablePayload &&
           inspected.cleanBaseBytes != null;
       _useInMemoryCleanBaseRef = hasRestorableBase;
-      _originalBaseBytes = hasRestorableBase ? inspected.cleanBaseBytes : fileBytes;
+      _originalBaseBytes = hasRestorableBase ? inspected.cleanBaseBytes : null;
       _pendingRestoredBundle = editableMode ? inspected?.bundle : null;
 
       _rebuildDocumentRef();
@@ -143,9 +137,11 @@ extension _PdfTabContentSync on PdfTabContentState {
   void _syncTransformationMatrix() {
     if (!_pdfViewerController.isReady) return;
     final k = _docToCanvasScale > 0 ? _docToCanvasScale : 1.0;
-    final next = _pdfViewerController.value.multiplied(
-      Matrix4.diagonal3Values(k, k, k),
-    );
+    final next = k == 1.0
+        ? _pdfViewerController.value
+        : _pdfViewerController.value.multiplied(
+            Matrix4.diagonal3Values(k, k, k),
+          );
     if (_transformationController.value != next) {
       _transformationController.value = next;
     }
@@ -255,12 +251,7 @@ extension _PdfTabContentSync on PdfTabContentState {
       return;
     }
 
-    if (_contextMenuDialogContext != null) {
-      try {
-        Navigator.of(_contextMenuDialogContext!).pop();
-      } catch (_) {}
-      _contextMenuDialogContext = null;
-    }
+    _dismissContextMenuIfOpen();
 
     _syncDocumentLayoutFromController();
     final pages = _pdfViewerController.pages;
@@ -313,11 +304,7 @@ extension _PdfTabContentSync on PdfTabContentState {
         ? null
         : _computeLocalRectFromPdfrxDocRect(unionPdfrxRect);
     _refresh(() {
-      _selectedTextAnnotationId = null;
-      _selectedShapeId = null;
-      _selectedStrokeId = null;
-      _selectedImageId = null;
-      _editingTextBoxId = null;
+      _selectAnnotation();
       _selectedUnionPdfrxDocRect = unionPdfrxRect;
       _selectedPageDocRects = pageRectsMap;
       _selectedText = text;
@@ -555,18 +542,9 @@ extension _PdfTabContentSync on PdfTabContentState {
         if (_shouldEnableTextSelection &&
             isLongPress &&
             details.tapOn == pdfrx.PdfViewerPart.nonSelectedText) {
-          if (_contextMenuDialogContext != null) {
-            try {
-              Navigator.of(_contextMenuDialogContext!).pop();
-            } catch (_) {}
-            _contextMenuDialogContext = null;
-          }
+          _dismissContextMenuIfOpen();
           _refresh(() {
-            _selectedTextAnnotationId = null;
-            _selectedShapeId = null;
-            _selectedStrokeId = null;
-            _selectedImageId = null;
-            _editingTextBoxId = null;
+            _selectAnnotation();
             _hasActiveTextSelection = true;
           });
           Future.delayed(

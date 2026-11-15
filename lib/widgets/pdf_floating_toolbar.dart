@@ -112,10 +112,23 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
   }
 
 
+  Widget _buildDraggableHandle({
+    required double toolbarWidth,
+    required Size screenSize,
+    required Widget child,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: _handlePanUpdate,
+      onPanEnd: (d) => _handlePanEnd(d, toolbarWidth, screenSize),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screenSize = MediaQuery.of(context).size;
+    final screenSize = MediaQuery.sizeOf(context);
     final toolbarWidth = _isCollapsed ? 48.0 : 54.0;
     final isDualInput = widget.isStylusDetected &&
         (widget.activeTool == EditorTool.pen ||
@@ -139,10 +152,9 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
             ),
           ),
           child: _isCollapsed
-              ? GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: _handlePanUpdate,
-                  onPanEnd: (d) => _handlePanEnd(d, toolbarWidth, screenSize),
+              ? _buildDraggableHandle(
+                  toolbarWidth: toolbarWidth,
+                  screenSize: screenSize,
                   child: IconButton(
                     icon: const Icon(Icons.edit_note_rounded),
                     tooltip: 'Expand Tools',
@@ -156,10 +168,9 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Top Drag Handle (isolated gesture recognizer)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onPanUpdate: _handlePanUpdate,
-                      onPanEnd: (d) => _handlePanEnd(d, toolbarWidth, screenSize),
+                    _buildDraggableHandle(
+                      toolbarWidth: toolbarWidth,
+                      screenSize: screenSize,
                       child: Container(
                         width: toolbarWidth,
                         height: 28,
@@ -417,10 +428,9 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                       ),
 
                     // Bottom Drag Handle (isolated gesture recognizer)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onPanUpdate: _handlePanUpdate,
-                      onPanEnd: (d) => _handlePanEnd(d, toolbarWidth, screenSize),
+                    _buildDraggableHandle(
+                      toolbarWidth: toolbarWidth,
+                      screenSize: screenSize,
                       child: Container(
                         width: toolbarWidth,
                         height: 18,

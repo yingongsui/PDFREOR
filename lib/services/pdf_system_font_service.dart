@@ -181,10 +181,12 @@ class AndroidSystemFontResolver implements PdfFontResolver {
   String? get primaryCjkSerifPath =>
       findExistingFontFile(_cjkSerifFiles) ?? primaryCjkSansPath;
 
+  static final RegExp _nonAlphaNumRegex = RegExp('[^A-Za-z0-9]+');
+
   static String _normalizeAsciiFace(String rawFace) {
     final plusIdx = rawFace.indexOf('+');
     final withoutSubset = plusIdx >= 0 ? rawFace.substring(plusIdx + 1) : rawFace;
-    return withoutSubset.replaceAll(RegExp('[^A-Za-z0-9]+'), '').toLowerCase();
+    return withoutSubset.replaceAll(_nonAlphaNumRegex, '').toLowerCase();
   }
 
   static bool _hasUnicodeCjkSerifHint(String rawFace) {

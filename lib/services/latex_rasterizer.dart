@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -22,7 +21,6 @@ class LatexRasterizer {
   LatexRasterizer._();
 
   static const double _targetPdfDpi = 200.0;
-  static const int _isolatePixelThreshold = 16384;
 
   /// Computes a rasterization pixelRatio matching ~200 physical DPI on the target PDF page,
   /// rounded to 0.05 increments so identical formulas share cached bitmaps.
@@ -80,17 +78,6 @@ class LatexRasterizer {
     required Color color,
     required bool preserveMultiColor,
   }) async {
-    if (width * height < _isolatePixelThreshold) {
-      return encodeCompactLatexPng(
-        rawRgba: rawRgba,
-        width: width,
-        height: height,
-        logicalSize: logicalSize,
-        color: color,
-        preserveMultiColor: preserveMultiColor,
-      );
-    }
-
     final int colorR = (color.r * 255.0).round().clamp(0, 255);
     final int colorG = (color.g * 255.0).round().clamp(0, 255);
     final int colorB = (color.b * 255.0).round().clamp(0, 255);
@@ -98,7 +85,8 @@ class LatexRasterizer {
     final double logicalH = logicalSize.height;
     final bool forceUniform = !preserveMultiColor;
 
-    final payload = await Isolate.run(
+    final payload = await PngEncoder.runWithThreshold(
+      width * height,
       () => PngEncoder.encodeCompactAlphaPngIsolateSafe(
         rawRgba: rawRgba,
         width: width,
@@ -186,12 +174,7 @@ class LatexRasterizer {
         try {
           final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
           if (byteData != null) {
-            final rawBytes = Uint8List.fromList(
-              byteData.buffer.asUint8List(
-                byteData.offsetInBytes,
-                byteData.lengthInBytes,
-              ),
-            );
+            final rawBytes = PngEncoder.byteDataToUint8List(byteData);
             final hasColorCommand =
                 latex.contains(r'\color') || latex.contains(r'\textcolor');
             return await _encodeCompactLatexPngAsync(

@@ -10,9 +10,6 @@ import 'pdf_export_models.dart';
 ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
   final doc = sf.PdfDocument(inputBytes: payload.baseBytes);
   try {
-    doc.compressionLevel = sf.PdfCompressionLevel.best;
-    doc.fileStructure.crossReferenceType = sf.PdfCrossReferenceType.crossReferenceStream;
-
     final origPageCount = doc.pages.count;
 
     // 1. Compute original page document-space bounds BEFORE mutating doc.pages.
@@ -46,13 +43,16 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
         : false;
     final removedAttachment = PdfEditableLayerHelper.removeAnnotationAttachments(doc);
 
-    if (deletedSet.isNotEmpty ||
+    final disableIncrementalUpdate =
+        deletedSet.isNotEmpty ||
         ((strippedStreams || removedAttachment || payload.embedEditableData) &&
             payload.baseBytes.length <= 25 * 1024 * 1024) ||
         (payload.baseBytes.length <= 25 * 1024 * 1024 &&
-            countPdfEofMarkers(payload.baseBytes) >= 3)) {
-      doc.fileStructure.incrementalUpdate = false;
-    }
+            countPdfEofMarkers(payload.baseBytes) >= 3);
+    configurePdfSaveStructure(
+      doc,
+      disableIncrementalUpdate: disableIncrementalUpdate,
+    );
 
     final List<int> oldToNewPageIdx = List<int>.filled(origPageCount, -1);
     int nextNewIdx = 0;
@@ -76,7 +76,15 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
     }
 
     final preDrawSnapshots = payload.embedEditableData
-        ? PdfEditableLayerHelper.capturePreDrawSnapshots(doc)
+        ? PdfEditableLayerHelper.capturePreDrawSnapshots(
+            doc,
+            targetPageIndices: _collectAnnotatedTargetPages(
+              payload,
+              origPageBounds,
+              oldToNewPageIdx,
+              doc.pages.count,
+            ),
+          )
         : const <int, PagePreDrawSnapshot>{};
 
     // 5. Render text annotations with collinear rect merging & shared highlight ExtGState
@@ -170,7 +178,6 @@ void _drawExportTextAnnotations({
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   int activeHighlightPageIdx = -1;
   int activeHighlightColorArgb = 0;
   sf.PdfPath? activeHighlightPath;
@@ -189,15 +196,14 @@ void _drawExportTextAnnotations({
   }
 
   for (final ta in annotations) {
-    final origIdx = ta.pageNumber - 1;
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = resolveTargetPageByIndex(
+      doc,
+      origPageBounds,
+      oldToNewPageIdx,
+      ta.pageNumber - 1,
+    );
+    if (target == null) continue;
+    final (:newIdx, :page, :bounds, :scaleX, :scaleY) = target;
 
     final scaledRects = <Rect>[
       for (final (rl, rt, rw, rh) in ta.rects)
@@ -261,7 +267,6 @@ void _drawExportStrokes({
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   int strokeBatchPageIdx = -1;
   int strokeBatchColorArgb = 0;
   int strokeBatchWidthTenths = 0;
@@ -286,15 +291,14 @@ void _drawExportStrokes({
 
   for (final stroke in strokes) {
     if (stroke.points.isEmpty) continue;
-    final origIdx = findOrigPageIndex(origPageBounds, stroke.points.first.$2);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = resolveTargetPageByIndex(
+      doc,
+      origPageBounds,
+      oldToNewPageIdx,
+      findOrigPageIndex(origPageBounds, stroke.points.first.$2),
+    );
+    if (target == null) continue;
+    final (:newIdx, :page, :bounds, :scaleX, :scaleY) = target;
 
     if (stroke.points.length == 1) {
       flushStrokeBatch();
@@ -373,17 +377,15 @@ void _drawExportShapes({
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   for (final shape in shapes) {
-    final origIdx = findOrigPageIndex(origPageBounds, shape.startY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = resolveTargetPageByIndex(
+      doc,
+      origPageBounds,
+      oldToNewPageIdx,
+      findOrigPageIndex(origPageBounds, shape.startY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final start = roundPdfOffset(Offset(
       (shape.startX - bounds.left) * scaleX,
@@ -463,21 +465,19 @@ List<FallbackRequest> _drawExportTextBoxes({
   required List<int> oldToNewPageIdx,
   required Map<String, sf.PdfBitmap> bitmapCache,
 }) {
-  final origPageCount = origPageBounds.length;
   final Map<String, sf.PdfFont> fontCache = {};
   final wordWrapFormat = sf.PdfStringFormat(wordWrap: sf.PdfWordWrapType.word);
   final List<FallbackRequest> missingFallbacks = [];
 
   for (final tb in payload.textBoxes) {
-    final origIdx = findOrigPageIndex(origPageBounds, tb.posY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = resolveTargetPageByIndex(
+      doc,
+      origPageBounds,
+      oldToNewPageIdx,
+      findOrigPageIndex(origPageBounds, tb.posY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final pos = roundPdfOffset(Offset(
       ((tb.posX - bounds.left) + 4) * scaleX,
@@ -570,17 +570,15 @@ void _drawExportImages({
   required List<int> oldToNewPageIdx,
   required Map<String, sf.PdfBitmap> bitmapCache,
 }) {
-  final origPageCount = origPageBounds.length;
   for (final img in payload.images) {
-    final origIdx = findOrigPageIndex(origPageBounds, img.posY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = resolveTargetPageByIndex(
+      doc,
+      origPageBounds,
+      oldToNewPageIdx,
+      findOrigPageIndex(origPageBounds, img.posY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final pos = roundPdfOffset(Offset(
       (img.posX - bounds.left) * scaleX,
@@ -601,4 +599,39 @@ void _drawExportImages({
       Rect.fromLTWH(pos.dx, pos.dy, pdfW, pdfH),
     );
   }
+}
+
+Set<int> _collectAnnotatedTargetPages(
+  ExportJobPayload payload,
+  List<Rect> origPageBounds,
+  List<int> oldToNewPageIdx,
+  int pageCount,
+) {
+  final targets = <int>{};
+  void addOrig(int origIdx) {
+    if (origIdx < 0 || origIdx >= origPageBounds.length) return;
+    final newIdx = oldToNewPageIdx[origIdx];
+    if (newIdx >= 0 && newIdx < pageCount) {
+      targets.add(newIdx);
+    }
+  }
+
+  for (final ta in payload.textAnnotations) {
+    addOrig(ta.pageNumber - 1);
+  }
+  for (final s in payload.strokes) {
+    if (s.points.isNotEmpty) {
+      addOrig(findOrigPageIndex(origPageBounds, s.points.first.$2));
+    }
+  }
+  for (final sh in payload.shapes) {
+    addOrig(findOrigPageIndex(origPageBounds, sh.startY));
+  }
+  for (final tb in payload.textBoxes) {
+    addOrig(findOrigPageIndex(origPageBounds, tb.posY));
+  }
+  for (final img in payload.images) {
+    addOrig(findOrigPageIndex(origPageBounds, img.posY));
+  }
+  return targets;
 }

@@ -8,8 +8,6 @@ import 'editor_palette.dart';
 class FloatingToolbarPopups {
   FloatingToolbarPopups._();
 
-  static const List<Color> defaultPalette = kEditorToolbarPalette;
-
   static void showAnchoredPopup(
     BuildContext hostContext,
     BuildContext buttonContext,
@@ -18,7 +16,7 @@ class FloatingToolbarPopups {
     final renderBox = buttonContext.findRenderObject() as RenderBox?;
     final offset = renderBox?.localToGlobal(Offset.zero) ?? const Offset(100, 100);
     final size = renderBox?.size ?? const Size(48, 48);
-    final screenSize = MediaQuery.of(hostContext).size;
+    final screenSize = MediaQuery.sizeOf(hostContext);
 
     final isLeftHalf = offset.dx < screenSize.width / 2;
     final left = isLeftHalf ? offset.dx + size.width + 10 : null;
@@ -79,7 +77,7 @@ class FloatingToolbarPopups {
     required BuildContext buttonContext,
     required Color activeColor,
     required ValueChanged<Color> onColorSelected,
-    List<Color> palette = defaultPalette,
+    List<Color> palette = kEditorToolbarPalette,
   }) {
     showAnchoredPopup(hostContext, buttonContext, (dialogContext) {
       final theme = Theme.of(hostContext);

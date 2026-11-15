@@ -200,10 +200,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               _refresh(() {
                                 _oneShotShape = null;
                                 if (_drawingController.shapes.isNotEmpty) {
-                                  _selectedShapeId = _drawingController.shapes.last.id;
-                                  _selectedStrokeId = null;
-                                  _selectedImageId = null;
-                                  _selectedTextAnnotationId = null;
+                                  _selectAnnotation(
+                                    shapeId: _drawingController.shapes.last.id,
+                                  );
                                 }
                               });
                               _notifyDirtyIfChanged();
@@ -212,76 +211,53 @@ extension _PdfTabContentBuild on PdfTabContentState {
                             hasActiveTextSelection: _hasActiveTextSelection,
                             editingTextBoxId: _editingTextBoxId,
                             onEditingTextBoxChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _editingTextBoxId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                  } else if (_activeTool == EditorTool.textBox ||
-                                      _activeTool == EditorTool.latexBox) {
-                                    _activeTool = EditorTool.select;
-                                  }
-                                });
-                              }
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectAnnotation(editingTextBoxId: id);
+                                } else {
+                                  _finishTextBoxEditing();
+                                }
+                              });
                             },
                             selectedShapeId: _selectedShapeId,
                             onSelectedShapeChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedShapeId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectAnnotation(shapeId: id);
+                                } else {
+                                  _selectedShapeId = null;
+                                }
+                              });
                             },
                             selectedStrokeId: _selectedStrokeId,
                             onSelectedStrokeChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedStrokeId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectAnnotation(strokeId: id);
+                                } else {
+                                  _selectedStrokeId = null;
+                                }
+                              });
                             },
                             selectedImageId: _selectedImageId,
                             onSelectedImageChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedImageId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectAnnotation(imageId: id);
+                                } else {
+                                  _selectedImageId = null;
+                                }
+                              });
                             },
                             selectedTextAnnotationId: _selectedTextAnnotationId,
                             onSelectedTextAnnotationChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedTextAnnotationId = id;
-                                  if (id != null) {
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectAnnotation(textAnnotationId: id);
+                                } else {
+                                  _selectedTextAnnotationId = null;
+                                }
+                              });
                             },
                             onPointerEraserStateChanged: (pressed) {
                               if (_isPointerButtonPressed != pressed) {
@@ -299,10 +275,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               _refresh(() {
                                 _activeTool = EditorTool.select;
                                 if (_drawingController.shapes.isNotEmpty) {
-                                  _selectedShapeId = _drawingController.shapes.last.id;
-                                  _selectedStrokeId = null;
-                                  _selectedImageId = null;
-                                  _selectedTextAnnotationId = null;
+                                  _selectAnnotation(
+                                    shapeId: _drawingController.shapes.last.id,
+                                  );
                                 }
                               });
                               _notifyDirtyIfChanged();
@@ -466,19 +441,11 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   },
                   onDeleteTextBox: () {
                     if (editingTextBox == null) return;
-                    _editingTextBoxId = null;
-                    if (_activeTool == EditorTool.textBox || _activeTool == EditorTool.latexBox) {
-                      _activeTool = EditorTool.select;
-                    }
+                    _finishTextBoxEditing();
                     _drawingController.deleteTextBox(editingTextBox.id);
                   },
                   onDoneTextBox: () {
-                    _refresh(() {
-                      _editingTextBoxId = null;
-                      if (_activeTool == EditorTool.textBox || _activeTool == EditorTool.latexBox) {
-                        _activeTool = EditorTool.select;
-                      }
-                    });
+                    _refresh(_finishTextBoxEditing);
                   },
                 ),
               ],

@@ -1,4 +1,5 @@
 import 'dart:io' show ZLibCodec;
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -23,10 +24,33 @@ class EncodedPngPayload {
 class PngEncoder {
   PngEncoder._();
 
+  static const int isolatePixelThreshold = 16384;
+
   static const List<int> pngSignature = <int>[137, 80, 78, 71, 13, 10, 26, 10];
   static const List<int> chunkIHDR = <int>[73, 72, 68, 82];
   static const List<int> chunkIDAT = <int>[73, 68, 65, 84];
   static const List<int> chunkIEND = <int>[73, 69, 78, 68];
+
+  /// Returns a tight [Uint8List] view over [data] without an extra full-buffer
+  /// copy when [data] already spans its underlying backing store.
+  static Uint8List byteDataToUint8List(ByteData data) {
+    if (data.offsetInBytes == 0 &&
+        data.lengthInBytes == data.buffer.lengthInBytes) {
+      return data.buffer.asUint8List();
+    }
+    return Uint8List.fromList(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
+  }
+
+  /// Runs a synchronous PNG encoding [task] inline for small buffers or inside a
+  /// worker isolate for non-trivial pixel counts.
+  static Future<T> runWithThreshold<T>(int pixelCount, T Function() task) {
+    if (pixelCount < isolatePixelThreshold) {
+      return Future<T>.value(task());
+    }
+    return Isolate.run(task);
+  }
 
   static final Uint32List _crcTable = _buildCrcTable();
 
@@ -114,6 +138,10 @@ class PngEncoder {
     required int colorG,
     required int colorB,
     bool forceUniformColor = false,
+    int? preMinX,
+    int? preMinY,
+    int? preMaxX,
+    int? preMaxY,
   }) {
     if (width <= 0 ||
         height <= 0 ||
@@ -123,38 +151,48 @@ class PngEncoder {
       return null;
     }
 
-    int minX = width;
-    int minY = height;
-    int maxX = -1;
-    int maxY = -1;
+    int minX = preMinX ?? width;
+    int minY = preMinY ?? height;
+    int maxX = preMaxX ?? -1;
+    int maxY = preMaxY ?? -1;
     bool isUniformColor = true;
     bool isGrayscale = colorR == colorG && colorG == colorB;
 
-    // Pass 1: locate tight non-transparent bounding box & detect multi-color spans
-    for (int y = 0; y < height; y++) {
-      final rowOffset = y * width;
-      for (int x = 0; x < width; x++) {
-        final idx = (rowOffset + x) << 2;
-        final rawA = rawRgba[idx + 3];
-        final qA = ((rawA + 8) ~/ 17) * 17;
-        if (qA > 0) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
+    final hasPrecomputedBounds = forceUniformColor &&
+        preMinX != null &&
+        preMinY != null &&
+        preMaxX != null &&
+        preMaxY != null;
 
-          if (!forceUniformColor && rawA >= 200) {
-            final r = rawRgba[idx];
-            final g = rawRgba[idx + 1];
-            final b = rawRgba[idx + 2];
-            if (isGrayscale && (r != g || g != b)) {
-              isGrayscale = false;
-            }
-            if (isUniformColor &&
-                ((r - colorR).abs() > 6 ||
-                    (g - colorG).abs() > 6 ||
-                    (b - colorB).abs() > 6)) {
-              isUniformColor = false;
+    if (!hasPrecomputedBounds) {
+      // Pass 1: locate tight non-transparent bounding box & detect multi-color spans
+      for (int y = 0; y < height; y++) {
+        final rowOffset = y * width;
+        for (int x = 0; x < width; x++) {
+          final idx = (rowOffset + x) << 2;
+          final rawA = rawRgba[idx + 3];
+          final qA = ((rawA + 8) ~/ 17) * 17;
+          if (qA > 0) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+
+            if (!forceUniformColor &&
+                rawA >= 200 &&
+                (isGrayscale || isUniformColor)) {
+              final r = rawRgba[idx];
+              final g = rawRgba[idx + 1];
+              final b = rawRgba[idx + 2];
+              if (isGrayscale && (r != g || g != b)) {
+                isGrayscale = false;
+              }
+              if (isUniformColor &&
+                  ((r - colorR).abs() > 6 ||
+                      (g - colorG).abs() > 6 ||
+                      (b - colorB).abs() > 6)) {
+                isUniformColor = false;
+              }
             }
           }
         }
@@ -280,6 +318,10 @@ class PngEncoder {
     int minY = height;
     int maxX = -1;
     int maxY = -1;
+    int qMinX = width;
+    int qMinY = height;
+    int qMaxX = -1;
+    int qMaxY = -1;
 
     for (int y = 0; y < height; y++) {
       final rowOffset = y * width;
@@ -294,31 +336,39 @@ class PngEncoder {
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
           if (y > maxY) maxY = y;
-
-          final r = rawStraightRgba[idx];
-          final g = rawStraightRgba[idx + 1];
-          final b = rawStraightRgba[idx + 2];
-          if (r != g || g != b) {
-            isGrayscale = false;
+          if (a >= 9) {
+            if (x < qMinX) qMinX = x;
+            if (x > qMaxX) qMaxX = x;
+            if (y < qMinY) qMinY = y;
+            if (y > qMaxY) qMaxY = y;
           }
-          if (sampleR < 0) {
-            sampleR = r;
-            sampleG = g;
-            sampleB = b;
-            sampleMaxAlpha = a;
-          } else {
-            if (a > sampleMaxAlpha) {
+
+          if (isGrayscale || isSingleSolidColor || sampleR < 0 || a > sampleMaxAlpha) {
+            final r = rawStraightRgba[idx];
+            final g = rawStraightRgba[idx + 1];
+            final b = rawStraightRgba[idx + 2];
+            if (isGrayscale && (r != g || g != b)) {
+              isGrayscale = false;
+            }
+            if (sampleR < 0) {
               sampleR = r;
               sampleG = g;
               sampleB = b;
               sampleMaxAlpha = a;
-            }
-            if (isSingleSolidColor &&
-                a >= 180 &&
-                ((r - sampleR).abs() > 3 ||
-                    (g - sampleG).abs() > 3 ||
-                    (b - sampleB).abs() > 3)) {
-              isSingleSolidColor = false;
+            } else {
+              if (a > sampleMaxAlpha) {
+                sampleR = r;
+                sampleG = g;
+                sampleB = b;
+                sampleMaxAlpha = a;
+              }
+              if (isSingleSolidColor &&
+                  a >= 180 &&
+                  ((r - sampleR).abs() > 3 ||
+                      (g - sampleG).abs() > 3 ||
+                      (b - sampleB).abs() > 3)) {
+                isSingleSolidColor = false;
+              }
             }
           }
         }
@@ -332,7 +382,9 @@ class PngEncoder {
     if (cropTransparentMargins &&
         hasTransparency &&
         isSingleSolidColor &&
-        sampleR >= 0) {
+        sampleR >= 0 &&
+        qMaxX >= qMinX &&
+        qMaxY >= qMinY) {
       return encodeCompactAlphaPngIsolateSafe(
         rawRgba: rawStraightRgba,
         width: width,
@@ -343,6 +395,10 @@ class PngEncoder {
         colorG: sampleG,
         colorB: sampleB,
         forceUniformColor: true,
+        preMinX: qMinX,
+        preMinY: qMinY,
+        preMaxX: qMaxX,
+        preMaxY: qMaxY,
       );
     }
 

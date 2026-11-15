@@ -21,10 +21,13 @@ extension _HomeScreenActions on _HomeScreenState {
     );
   }
 
+  List<PdfFileInfo> get _selectedFiles =>
+      _allFiles.where((f) => _selectedFilePaths.contains(f.path)).toList();
+
   void _mergeDiscoveredFiles(List<PdfFileInfo> files) {
     final existingPaths = _allFiles.map((f) => f.path).toSet();
     for (final f in files) {
-      if (!existingPaths.contains(f.path)) {
+      if (existingPaths.add(f.path)) {
         _allFiles.add(f);
       }
     }
@@ -299,43 +302,36 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
 
-  void _copySelectedFiles() {
-    final files = _allFiles.where((f) => _selectedFilePaths.contains(f.path)).toList();
+  void _moveSelectionToClipboard({required bool isCut}) {
+    final files = _selectedFiles;
     if (files.isEmpty) return;
     _refresh(() {
       _clipboardFiles = files;
-      _isCutMode = false;
+      _isCutMode = isCut;
       _isSelectionMode = false;
       _selectedFilePaths.clear();
     });
     HapticFeedback.selectionClick();
-    _showHomeSnackBar(
-      files.length == 1
+    final String message;
+    if (isCut) {
+      message = files.length == 1
+          ? 'Cut "${files.first.name}". Tap Paste on any folder banner.'
+          : 'Cut ${files.length} files. Tap Paste on any folder banner.';
+    } else {
+      message = files.length == 1
           ? 'Copied "${files.first.name}" to clipboard'
-          : 'Copied ${files.length} files to clipboard',
+          : 'Copied ${files.length} files to clipboard';
+    }
+    _showHomeSnackBar(
+      message,
       duration: const Duration(seconds: 2),
       replaceCurrent: true,
     );
   }
 
-  void _cutSelectedFiles() {
-    final files = _allFiles.where((f) => _selectedFilePaths.contains(f.path)).toList();
-    if (files.isEmpty) return;
-    _refresh(() {
-      _clipboardFiles = files;
-      _isCutMode = true;
-      _isSelectionMode = false;
-      _selectedFilePaths.clear();
-    });
-    HapticFeedback.selectionClick();
-    _showHomeSnackBar(
-      files.length == 1
-          ? 'Cut "${files.first.name}". Tap Paste on any folder banner.'
-          : 'Cut ${files.length} files. Tap Paste on any folder banner.',
-      duration: const Duration(seconds: 2),
-      replaceCurrent: true,
-    );
-  }
+  void _copySelectedFiles() => _moveSelectionToClipboard(isCut: false);
+
+  void _cutSelectedFiles() => _moveSelectionToClipboard(isCut: true);
 
   Future<void> _pasteFilesToFolder(String targetFolderPath) async {
     if (_clipboardFiles.isEmpty) return;
@@ -355,13 +351,17 @@ extension _HomeScreenActions on _HomeScreenState {
     }
 
     int successCount = 0;
+    int failedCount = 0;
     final isCut = _isCutMode;
     final filesToProcess = List<PdfFileInfo>.from(_clipboardFiles);
 
     for (final sourceInfo in filesToProcess) {
       final sourcePath = sourceInfo.path;
       final sourceFile = File(sourcePath);
-      if (!await sourceFile.exists()) continue;
+      if (!await sourceFile.exists()) {
+        failedCount++;
+        continue;
+      }
 
       final baseName = p.basenameWithoutExtension(sourcePath);
       final ext = p.extension(sourcePath);
@@ -384,15 +384,10 @@ extension _HomeScreenActions on _HomeScreenState {
             }
             await _scannerService.renameImportedFilePath(sourcePath, finalDestPath);
             PdfThumbnailService.instance.invalidate(sourcePath);
-            try {
-              PdfTabManager.instance.renameTab(
-                sourcePath,
-                PdfFileInfo.fromFile(File(finalDestPath)),
-              );
-            } catch (_) {
-              ReadingProgressService.instance.renamePath(sourcePath, finalDestPath);
-              PdfTabManager.instance.closeTabByPath(sourcePath);
-            }
+            PdfTabManager.instance.renameTab(
+              sourcePath,
+              PdfFileInfo.fromFile(File(finalDestPath)),
+            );
             successCount++;
           }
         } else {
@@ -408,7 +403,9 @@ extension _HomeScreenActions on _HomeScreenState {
           await sourceFile.copy(destPath);
           successCount++;
         }
-      } catch (_) {}
+      } catch (_) {
+        failedCount++;
+      }
     }
 
     if (isCut) {
@@ -418,13 +415,34 @@ extension _HomeScreenActions on _HomeScreenState {
       });
     }
 
-    await _startScan();
+    if (!mounted) return;
+    if (successCount > 0) {
+      await _startScan();
+    }
+
+    if (successCount == 0 && failedCount == 0) {
+      return;
+    }
+
+    final actionVerb = isCut ? 'Moved' : 'Copied';
+    final String message;
+    final Color backgroundColor;
+    if (successCount == 0) {
+      message = 'Failed to ${isCut ? 'move' : 'copy'} $failedCount file(s)';
+      backgroundColor = Colors.red;
+    } else if (failedCount > 0) {
+      message = '$actionVerb $successCount file(s), $failedCount failed';
+      backgroundColor = Colors.orange;
+    } else {
+      message = successCount == 1
+          ? '$actionVerb 1 file successfully'
+          : '$actionVerb $successCount files successfully';
+      backgroundColor = Colors.green;
+    }
 
     _showHomeSnackBar(
-      isCut
-          ? (successCount == 1 ? 'Moved 1 file successfully' : 'Moved $successCount files successfully')
-          : (successCount == 1 ? 'Copied 1 file successfully' : 'Copied $successCount files successfully'),
-      backgroundColor: Colors.green,
+      message,
+      backgroundColor: backgroundColor,
       duration: const Duration(seconds: 2),
       replaceCurrent: true,
     );
@@ -481,9 +499,7 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
   void _openSelectedFilesInReader([PdfFileInfo? targetFile]) {
-    final selectedFiles = _allFiles
-        .where((f) => _selectedFilePaths.contains(f.path))
-        .toList();
+    final selectedFiles = _selectedFiles;
     if (targetFile != null && !selectedFiles.any((f) => f.path == targetFile.path)) {
       selectedFiles.add(targetFile);
     }
@@ -496,10 +512,7 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
   Future<void> _shareSelectedFiles() async {
-    final filesToShare = _allFiles
-        .where((f) => _selectedFilePaths.contains(f.path))
-        .map((f) => XFile(f.path))
-        .toList();
+    final filesToShare = _selectedFiles.map((f) => XFile(f.path)).toList();
     if (filesToShare.isEmpty) return;
     try {
       await SharePlus.instance.share(
@@ -508,7 +521,9 @@ extension _HomeScreenActions on _HomeScreenState {
           text: '${filesToShare.length} PDF files',
         ),
       );
-    } catch (_) {}
+    } catch (e) {
+      _showHomeSnackBar('Share failed: $e');
+    }
   }
 
   Future<void> _deleteSelectedFiles() async {
@@ -584,15 +599,15 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
   void _toggleFolderCollapse(String folderPath) {
+    final willCollapse = !_collapsedFolders.contains(folderPath);
     _refresh(() {
-      final willCollapse = !_collapsedFolders.contains(folderPath);
       if (willCollapse) {
         _collapsedFolders.add(folderPath);
       } else {
         _collapsedFolders.remove(folderPath);
       }
-      _scannerService.setFolderCollapsed(folderPath, willCollapse);
     });
+    _scannerService.setFolderCollapsed(folderPath, willCollapse);
   }
 
   void _toggleAllFolders(List<String> allFolders) {
@@ -601,12 +616,11 @@ extension _HomeScreenActions on _HomeScreenState {
     _refresh(() {
       if (allCollapsed) {
         _collapsedFolders.removeAll(allFolders);
-        _scannerService.setAllFoldersCollapsed(allFolders, false);
       } else {
         _collapsedFolders.addAll(allFolders);
-        _scannerService.setAllFoldersCollapsed(allFolders, true);
       }
     });
+    _scannerService.setAllFoldersCollapsed(allFolders, !allCollapsed);
   }
 
   void _showAddOptions() {

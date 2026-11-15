@@ -119,11 +119,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
         );
         _drawingController.addImage(newImg);
         _refresh(() {
-          _selectedImageId = newImg.id;
-          _selectedShapeId = null;
-          _selectedStrokeId = null;
-          _selectedTextAnnotationId = null;
-          _editingTextBoxId = null;
+          _selectAnnotation(imageId: newImg.id);
           _activeTool = EditorTool.select;
         });
         _showViewerSnackBar('Image pasted from clipboard!');
@@ -136,7 +132,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
       final text = clipboardData?.text?.trim();
       if (text != null && text.isNotEmpty) {
         final newBox = DrawnTextBox(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: nextAnnotationId(),
           text: text,
           position: docPos,
           color: _activeColor,

@@ -91,12 +91,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   @override
   void initState() {
     super.initState();
-    widget.controller.savedLayerListenable.addListener(_onSavedLayerChanged);
     _rebuildPaintListenables();
-  }
-
-  void _onSavedLayerChanged() {
-    _pictureCache.invalidate();
   }
 
   void _rebuildPaintListenables() {
@@ -177,58 +172,47 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
       final hitShape = widget.controller.hitTestShape(docPos, 24.0);
       if (hitShape != null) {
-        _setSelectedShape(hitShape.id);
-        _setSelectedStroke(null);
-        _setSelectedImage(null);
-        _setSelectedTextAnnotation(null);
+        _selectSingleElement(shapeId: hitShape.id);
         return;
       }
 
       final hitStroke = widget.controller.hitTestStroke(docPos, 20.0);
       if (hitStroke != null) {
-        _setSelectedStroke(hitStroke.id);
-        _setSelectedShape(null);
-        _setSelectedImage(null);
-        _setSelectedTextAnnotation(null);
+        _selectSingleElement(strokeId: hitStroke.id);
         return;
       }
 
       final hitTa = widget.controller.hitTestTextAnnotation(docPos, 6.0);
       if (hitTa != null) {
-        _setSelectedTextAnnotation(hitTa.id);
-        _setSelectedShape(null);
-        _setSelectedStroke(null);
-        _setSelectedImage(null);
+        _selectSingleElement(textAnnotationId: hitTa.id);
         return;
       }
 
-      if (_selectedShapeId != null) {
-        _setSelectedShape(null);
-      }
-      if (_selectedStrokeId != null) {
-        _setSelectedStroke(null);
-      }
-      if (_selectedImageId != null) {
-        _setSelectedImage(null);
-      }
-      if (_selectedTextAnnotationId != null) {
-        _setSelectedTextAnnotation(null);
-      }
+      _selectSingleElement();
     } else if (!canSelectElements) {
       if (isStylus || widget.activeTool == EditorTool.shape) {
-        if (_selectedShapeId != null) {
-          _setSelectedShape(null);
-        }
-        if (_selectedStrokeId != null) {
-          _setSelectedStroke(null);
-        }
-        if (_selectedImageId != null) {
-          _setSelectedImage(null);
-        }
-        if (_selectedTextAnnotationId != null) {
-          _setSelectedTextAnnotation(null);
-        }
+        _selectSingleElement();
       }
+    }
+  }
+
+  void _selectSingleElement({
+    String? shapeId,
+    String? strokeId,
+    String? imageId,
+    String? textAnnotationId,
+  }) {
+    if (_selectedShapeId != shapeId) {
+      _setSelectedShape(shapeId);
+    }
+    if (_selectedStrokeId != strokeId) {
+      _setSelectedStroke(strokeId);
+    }
+    if (_selectedImageId != imageId) {
+      _setSelectedImage(imageId);
+    }
+    if (_selectedTextAnnotationId != textAnnotationId) {
+      _setSelectedTextAnnotation(textAnnotationId);
     }
   }
 
@@ -255,8 +239,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
   void didUpdateWidget(covariant PdfEditorCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.controller != oldWidget.controller) {
-      oldWidget.controller.savedLayerListenable.removeListener(_onSavedLayerChanged);
-      widget.controller.savedLayerListenable.addListener(_onSavedLayerChanged);
       _pictureCache.invalidate();
     }
     if (widget.controller != oldWidget.controller ||
@@ -267,7 +249,6 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   @override
   void dispose() {
-    widget.controller.savedLayerListenable.removeListener(_onSavedLayerChanged);
     _pictureCache.dispose();
     super.dispose();
   }
@@ -645,8 +626,7 @@ class _SelectedStrokeDragItemState extends State<_SelectedStrokeDragItem> {
   Offset _totalDelta = Offset.zero;
 
   double get _currentScale =>
-      (widget.transformationController?.value.getMaxScaleOnAxis() ?? 1.0)
-          .clamp(0.2, 5.0);
+      canvasScaleFromController(widget.transformationController);
 
   void _commitDrag() {
     if (_totalDelta != Offset.zero) {
@@ -659,22 +639,19 @@ class _SelectedStrokeDragItemState extends State<_SelectedStrokeDragItem> {
   Widget build(BuildContext context) {
     return TapRegion(
       groupId: kEditableElementRegionGroup,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.move,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) {
-            _totalDelta = Offset.zero;
-          },
-          onPanUpdate: (details) {
-            final docDelta = details.delta / _currentScale;
-            if (docDelta == Offset.zero) return;
-            _totalDelta += docDelta;
-            widget.onMove(docDelta);
-          },
-          onPanEnd: (_) => _commitDrag(),
-          onPanCancel: _commitDrag,
-        ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) {
+          _totalDelta = Offset.zero;
+        },
+        onPanUpdate: (details) {
+          final docDelta = details.delta / _currentScale;
+          if (docDelta == Offset.zero) return;
+          _totalDelta += docDelta;
+          widget.onMove(docDelta);
+        },
+        onPanEnd: (_) => _commitDrag(),
+        onPanCancel: _commitDrag,
       ),
     );
   }

@@ -1,6 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../services/editor_settings_service.dart';
+import 'settings_widgets.dart';
+
+class _LatexFormulaText extends StatelessWidget {
+  final String operatorTex;
+  final double fontSize;
+
+  const _LatexFormulaText({
+    required this.operatorTex,
+    required this.fontSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Math.tex(
+      operatorTex,
+      textStyle: TextStyle(
+        fontSize: fontSize,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+      mathStyle: MathStyle.display,
+      onErrorFallback: (_) => Text(
+        operatorTex,
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+}
 
 class LatexOperatorsCard extends StatelessWidget {
   final EditorSettings editorSettings;
@@ -30,6 +57,7 @@ class LatexOperatorsCard extends StatelessWidget {
   Future<void> _showReorderOperatorsSheet(BuildContext context) async {
     final theme = Theme.of(context);
     final reorderedList = List<String>.from(editorSettings.latexQuickOperators);
+    var changed = false;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -86,6 +114,7 @@ class LatexOperatorsCard extends StatelessWidget {
                           setSheetState(() {
                             final item = reorderedList.removeAt(oldIndex);
                             reorderedList.insert(newIndex, item);
+                            changed = true;
                           });
                         },
                         itemBuilder: (context, index) {
@@ -103,15 +132,7 @@ class LatexOperatorsCard extends StatelessWidget {
                                   color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
                                 ),
                               ),
-                              child: Math.tex(
-                                op,
-                                textStyle: TextStyle(
-                                  fontSize: 14,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                                mathStyle: MathStyle.display,
-                                onErrorFallback: (_) => Text(op, style: const TextStyle(fontSize: 12)),
-                              ),
+                              child: _LatexFormulaText(operatorTex: op, fontSize: 14),
                             ),
                             title: Text(
                               op,
@@ -141,57 +162,44 @@ class LatexOperatorsCard extends StatelessWidget {
       },
     );
 
-    await onSettingsUpdated(
-      editorSettings.copyWith(latexQuickOperators: reorderedList),
-    );
+    if (changed) {
+      await onSettingsUpdated(
+        editorSettings.copyWith(latexQuickOperators: reorderedList),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final operators = editorSettings.latexQuickOperators;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.functions_rounded, color: theme.colorScheme.primary, size: 22),
+    return SettingsCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              SettingsIconBadge(icon: Icons.functions_rounded),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Math Formula Operators',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Quick shortcuts available when editing formulas • Drag to reorder',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Math Formula Operators',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Quick shortcuts available when editing formulas • Drag to reorder',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
@@ -231,18 +239,7 @@ class LatexOperatorsCard extends StatelessWidget {
                               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                             ),
                             const SizedBox(width: 6),
-                            Math.tex(
-                              operators[i],
-                              textStyle: TextStyle(
-                                fontSize: 13,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                              mathStyle: MathStyle.display,
-                              onErrorFallback: (_) => Text(
-                                operators[i],
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
+                            _LatexFormulaText(operatorTex: operators[i], fontSize: 13),
                             const SizedBox(width: 6),
                             Tooltip(
                               message: 'Delete',
@@ -286,12 +283,7 @@ class LatexOperatorsCard extends StatelessWidget {
                                 BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
                               ],
                             ),
-                            child: Math.tex(
-                              operators[i],
-                              textStyle: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
-                              mathStyle: MathStyle.display,
-                              onErrorFallback: (_) => Text(operators[i]),
-                            ),
+                            child: _LatexFormulaText(operatorTex: operators[i], fontSize: 14),
                           ),
                         ),
                         childWhenDragging: Opacity(opacity: 0.25, child: chipWidget),
@@ -350,7 +342,6 @@ class LatexOperatorsCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }

@@ -214,9 +214,10 @@ class PdfFastScrollbarState extends State<PdfFastScrollbar> {
               ),
 
             // Edge-snapped simple scroll thumb displaying only the current page number
-            AnimatedBuilder(
-              animation: widget.controller,
-              builder: (context, _) {
+            if (showControls)
+              AnimatedBuilder(
+                animation: widget.controller,
+                builder: (context, _) {
                 if (!widget.controller.isReady) {
                   return const SizedBox.shrink();
                 }

@@ -100,10 +100,16 @@ class DrawingController extends ChangeNotifier {
   final List<DrawnTextBox> _textBoxes = [];
   final List<DrawnImage> _images = [];
   final List<DrawnTextAnnotation> _textAnnotations = [];
-  final List<_UndoAction> _undoHistory = [];
+  final ListQueue<_UndoAction> _undoHistory = ListQueue<_UndoAction>();
+
+  int _savedEpoch = 0;
+  final Map<int, int> _savedPageVersions = {};
 
   final _LayerNotifier _savedLayerNotifier = _LayerNotifier();
   final _LayerNotifier _activeLayerNotifier = _LayerNotifier();
+
+  int get savedEpoch => _savedEpoch;
+  Map<int, int> get savedPageVersions => _savedPageVersions;
 
   /// Repaint listenable exclusively for committed strokes and text annotations.
   Listenable get savedLayerListenable => _savedLayerNotifier;
@@ -162,16 +168,22 @@ class DrawingController extends ChangeNotifier {
   void _pushUndo(_UndoAction action) {
     _undoHistory.add(action);
     if (_undoHistory.length > _maxUndoHistory) {
-      _undoHistory.removeAt(0);
+      _undoHistory.removeFirst();
     }
+  }
+
+  void _markSavedPageDirty(int pageNumber) {
+    _savedPageVersions[pageNumber] = (_savedPageVersions[pageNumber] ?? 0) + 1;
   }
 
   void _notifyActiveOnly() {
     _activeLayerNotifier.notify();
-    notifyListeners();
   }
 
-  void _notifySavedOnly() {
+  void _notifySavedOnly([int? dirtyPageNumber]) {
+    if (dirtyPageNumber != null) {
+      _markSavedPageDirty(dirtyPageNumber);
+    }
     _savedLayerNotifier.notify();
     notifyListeners();
   }
@@ -229,6 +241,7 @@ class DrawingController extends ChangeNotifier {
       );
       _strokes.add(stroke);
       _pushUndo(_UndoAction(_UndoActionType.addStroke, stroke));
+      _markSavedPageDirty(pageNumber);
       _isDirty = true;
     }
     _activeStrokePoints = null;
@@ -256,6 +269,7 @@ class DrawingController extends ChangeNotifier {
       if (_hitTestStroke(stroke, point, radius + stroke.strokeWidth / 2)) {
         _pushUndo(_UndoAction(_UndoActionType.removeStroke, _RemovedEntry(i, stroke)));
         _strokes.removeAt(i);
+        _markSavedPageDirty(stroke.pageNumber);
         erasedStrokes = true;
       }
     }
@@ -283,16 +297,22 @@ class DrawingController extends ChangeNotifier {
   }
 
   bool _hitTestStroke(DrawingStroke stroke, Offset point, double threshold) {
+    if (stroke.points.isEmpty) return false;
     if (!stroke.getBounds().inflate(threshold).contains(point)) {
       return false;
     }
-    for (int i = 0; i < stroke.points.length; i++) {
-      if ((stroke.points[i].offset - point).distance <= threshold) {
+    final thresholdSq = threshold * threshold;
+    if (stroke.points.length == 1) {
+      return (stroke.points.first.offset - point).distanceSquared <= thresholdSq;
+    }
+    for (int i = 1; i < stroke.points.length; i++) {
+      if (_distToSegmentSq(
+            point,
+            stroke.points[i - 1].offset,
+            stroke.points[i].offset,
+          ) <=
+          thresholdSq) {
         return true;
-      }
-      if (i > 0) {
-        final d = _distToSegment(point, stroke.points[i - 1].offset, stroke.points[i].offset);
-        if (d <= threshold) return true;
       }
     }
     return false;
@@ -309,11 +329,12 @@ class DrawingController extends ChangeNotifier {
         if (rect.width < 100 && rect.height < 100 && rect.contains(point)) {
           return true;
         }
-        final l1 = _distToSegment(point, rect.topLeft, rect.topRight);
-        final l2 = _distToSegment(point, rect.topRight, rect.bottomRight);
-        final l3 = _distToSegment(point, rect.bottomRight, rect.bottomLeft);
-        final l4 = _distToSegment(point, rect.bottomLeft, rect.topLeft);
-        return math.min(math.min(l1, l2), math.min(l3, l4)) <= threshold;
+        final thresholdSq = threshold * threshold;
+        final l1 = _distToSegmentSq(point, rect.topLeft, rect.topRight);
+        final l2 = _distToSegmentSq(point, rect.topRight, rect.bottomRight);
+        final l3 = _distToSegmentSq(point, rect.bottomRight, rect.bottomLeft);
+        final l4 = _distToSegmentSq(point, rect.bottomLeft, rect.topLeft);
+        return math.min(math.min(l1, l2), math.min(l3, l4)) <= thresholdSq;
       case ShapeType.roundedRectangle:
         final radius = roundedRectCornerRadius(rect);
         final halfW = rect.width * 0.5;
@@ -348,7 +369,7 @@ class DrawingController extends ChangeNotifier {
         return innerNorm >= 1.0;
       case ShapeType.line:
       case ShapeType.arrow:
-        return _distToSegment(point, shape.start, shape.end) <= threshold;
+        return _distToSegmentSq(point, shape.start, shape.end) <= threshold * threshold;
     }
   }
 
@@ -375,14 +396,14 @@ class DrawingController extends ChangeNotifier {
   void updateStroke(DrawingStroke stroke) {
     stroke.invalidateBounds();
     _isDirty = true;
-    _notifySavedOnly();
+    _notifySavedOnly(stroke.pageNumber);
   }
 
   void moveStroke(DrawingStroke stroke, Offset delta) {
     if (delta == Offset.zero) return;
     stroke.translate(delta);
     _isDirty = true;
-    _notifySavedOnly();
+    _notifySavedOnly(stroke.pageNumber);
   }
 
   void recordStrokeMove(DrawingStroke stroke, Offset totalDelta) {
@@ -401,19 +422,19 @@ class DrawingController extends ChangeNotifier {
       final removed = _strokes.removeAt(idx);
       _pushUndo(_UndoAction(_UndoActionType.removeStroke, _RemovedEntry(idx, removed)));
       _isDirty = hasAnnotations || _hasSavedBaseline;
-      _notifySavedOnly();
+      _notifySavedOnly(removed.pageNumber);
     }
   }
 
-  static double _distToSegment(Offset p, Offset v, Offset w) {
+  static double _distToSegmentSq(Offset p, Offset v, Offset w) {
     final l2 = (v - w).distanceSquared;
-    if (l2 == 0.0) return (p - v).distance;
+    if (l2 == 0.0) return (p - v).distanceSquared;
     final t = math.max(
       0.0,
       math.min(1.0, ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2),
     );
     final projection = Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy));
-    return (p - projection).distance;
+    return (p - projection).distanceSquared;
   }
 
   // --- SHAPE DRAWING ---
@@ -439,9 +460,10 @@ class DrawingController extends ChangeNotifier {
   }
 
   void endShape(ShapeType type, Color color, double strokeWidth, int pageNumber) {
+    bool addedShape = false;
     if (_activeShapeStart != null && _activeShapeEnd != null) {
-      final distance = (_activeShapeEnd! - _activeShapeStart!).distance;
-      if (distance > 5) {
+      final distanceSq = (_activeShapeEnd! - _activeShapeStart!).distanceSquared;
+      if (distanceSq > 25.0) {
         final shape = DrawnShape(
           type: type,
           start: _activeShapeStart!,
@@ -453,11 +475,18 @@ class DrawingController extends ChangeNotifier {
         _shapes.add(shape);
         _pushUndo(_UndoAction(_UndoActionType.addShape, shape));
         _isDirty = true;
+        addedShape = true;
       }
     }
+    final hadActive = _activeShapeStart != null || _activeShapeEnd != null;
     _activeShapeStart = null;
     _activeShapeEnd = null;
-    _notifyActiveOnly();
+    if (addedShape) {
+      _activeLayerNotifier.notify();
+      notifyListeners();
+    } else if (hadActive) {
+      _notifyActiveOnly();
+    }
   }
 
   void updateDrawnShape(DrawnShape updated) {
@@ -591,15 +620,19 @@ class DrawingController extends ChangeNotifier {
     _textAnnotations.add(ta);
     _pushUndo(_UndoAction(_UndoActionType.addTextAnnotation, ta));
     _isDirty = true;
-    _notifySavedOnly();
+    _notifySavedOnly(ta.pageNumber);
   }
 
   void updateTextAnnotation(DrawnTextAnnotation updated) {
     final idx = _textAnnotations.indexWhere((a) => a.id == updated.id);
     if (idx != -1) {
+      final prevPage = _textAnnotations[idx].pageNumber;
       _textAnnotations[idx] = updated;
+      if (prevPage != updated.pageNumber) {
+        _markSavedPageDirty(prevPage);
+      }
       _isDirty = true;
-      _notifySavedOnly();
+      _notifySavedOnly(updated.pageNumber);
     }
   }
 
@@ -611,7 +644,7 @@ class DrawingController extends ChangeNotifier {
         _UndoAction(_UndoActionType.removeTextAnnotation, _RemovedEntry(idx, removed)),
       );
       _isDirty = hasAnnotations || _hasSavedBaseline;
-      _notifySavedOnly();
+      _notifySavedOnly(removed.pageNumber);
     }
   }
 
@@ -635,7 +668,9 @@ class DrawingController extends ChangeNotifier {
     final action = _undoHistory.removeLast();
     switch (action.type) {
       case _UndoActionType.addStroke:
-        _strokes.remove(action.data);
+        final addedStroke = action.data as DrawingStroke;
+        _strokes.remove(addedStroke);
+        _markSavedPageDirty(addedStroke.pageNumber);
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.addShape:
@@ -648,12 +683,16 @@ class DrawingController extends ChangeNotifier {
         _images.remove(action.data);
         break;
       case _UndoActionType.addTextAnnotation:
-        _textAnnotations.remove(action.data);
+        final addedTa = action.data as DrawnTextAnnotation;
+        _textAnnotations.remove(addedTa);
+        _markSavedPageDirty(addedTa.pageNumber);
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.removeStroke:
         final entry = action.data as _RemovedEntry;
-        _strokes.insert(entry.index.clamp(0, _strokes.length), entry.item as DrawingStroke);
+        final stroke = entry.item as DrawingStroke;
+        _strokes.insert(entry.index.clamp(0, _strokes.length), stroke);
+        _markSavedPageDirty(stroke.pageNumber);
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.removeShape:
@@ -670,10 +709,12 @@ class DrawingController extends ChangeNotifier {
         break;
       case _UndoActionType.removeTextAnnotation:
         final entry = action.data as _RemovedEntry;
+        final ta = entry.item as DrawnTextAnnotation;
         _textAnnotations.insert(
           entry.index.clamp(0, _textAnnotations.length),
-          entry.item as DrawnTextAnnotation,
+          ta,
         );
+        _markSavedPageDirty(ta.pageNumber);
         _savedLayerNotifier.notify();
         break;
       case _UndoActionType.modifyShape:
@@ -695,6 +736,7 @@ class DrawingController extends ChangeNotifier {
       case _UndoActionType.modifyStrokeMove:
         final change = action.data as _StrokeMoveChange;
         change.stroke.translate(-change.delta);
+        _markSavedPageDirty(change.stroke.pageNumber);
         _savedLayerNotifier.notify();
         break;
     }
@@ -714,6 +756,8 @@ class DrawingController extends ChangeNotifier {
     _activeShapeEnd = null;
     _isDirty = false;
     _hasSavedBaseline = false;
+    _savedEpoch++;
+    _savedPageVersions.clear();
     _notifyBothLayers();
   }
 
@@ -746,6 +790,8 @@ class DrawingController extends ChangeNotifier {
     _activeShapeEnd = null;
     _isDirty = false;
     _hasSavedBaseline = hasAnnotations;
+    _savedEpoch++;
+    _savedPageVersions.clear();
     _notifyBothLayers();
   }
 }

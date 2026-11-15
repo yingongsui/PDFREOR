@@ -65,9 +65,7 @@ extension _HomeScreenAppBar on _HomeScreenState {
                       icon: const Icon(Icons.more_vert_rounded),
                       tooltip: 'More Options',
                       onSelected: (val) {
-                        final selectedFiles = _allFiles
-                            .where((f) => _selectedFilePaths.contains(f.path))
-                            .toList();
+                        final selectedFiles = _selectedFiles;
                         if (selectedFiles.isEmpty) return;
                         final singleFile = selectedFiles.first;
                         switch (val) {
@@ -219,13 +217,7 @@ extension _HomeScreenAppBar on _HomeScreenState {
             IconButton(
               icon: const Icon(Icons.close_rounded),
               tooltip: 'Close Search',
-              onPressed: () {
-                _refresh(() {
-                  _isSearching = false;
-                  _searchController.clear();
-                  _applyFilterAndSort();
-                });
-              },
+              onPressed: _closeSearch,
             )
           else
             IconButton(

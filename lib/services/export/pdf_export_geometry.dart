@@ -278,16 +278,59 @@ List<Rect> computeFallbackPageBounds(
   return bounds;
 }
 
+typedef ResolvedTargetPage = ({
+  int newIdx,
+  sf.PdfPage page,
+  Rect bounds,
+  double scaleX,
+  double scaleY,
+});
+
+void configurePdfSaveStructure(
+  sf.PdfDocument doc, {
+  required bool disableIncrementalUpdate,
+}) {
+  doc.compressionLevel = sf.PdfCompressionLevel.best;
+  doc.fileStructure.crossReferenceType =
+      sf.PdfCrossReferenceType.crossReferenceStream;
+  if (disableIncrementalUpdate) {
+    doc.fileStructure.incrementalUpdate = false;
+  }
+}
+
+ResolvedTargetPage? resolveTargetPageByIndex(
+  sf.PdfDocument doc,
+  List<Rect> origPageBounds,
+  List<int> oldToNewPageIdx,
+  int origIdx,
+) {
+  if (origIdx < 0 || origIdx >= origPageBounds.length) return null;
+  final newIdx = oldToNewPageIdx[origIdx];
+  if (newIdx < 0 || newIdx >= doc.pages.count) return null;
+  final page = doc.pages[newIdx];
+  final bounds = origPageBounds[origIdx];
+  return (
+    newIdx: newIdx,
+    page: page,
+    bounds: bounds,
+    scaleX: page.size.width / bounds.width,
+    scaleY: page.size.height / bounds.height,
+  );
+}
+
 int findOrigPageIndex(List<Rect> origPageBounds, double y) {
   if (origPageBounds.isEmpty) return -1;
-  for (int i = 0; i < origPageBounds.length; i++) {
-    final bounds = origPageBounds[i];
-    final splitY = i < origPageBounds.length - 1
-        ? (bounds.bottom + origPageBounds[i + 1].top) / 2.0
-        : double.infinity;
+  int low = 0;
+  int high = origPageBounds.length - 1;
+  while (low < high) {
+    final mid = (low + high) >> 1;
+    final splitY =
+        (origPageBounds[mid].bottom + origPageBounds[mid + 1].top) / 2.0;
     if (y <= splitY) {
-      return i;
+      high = mid;
+    } else {
+      low = mid + 1;
     }
   }
-  return origPageBounds.length - 1;
+  return low;
 }
