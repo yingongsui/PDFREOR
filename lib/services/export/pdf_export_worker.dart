@@ -164,13 +164,33 @@ ExportWorkerResult runPdfExportWorker(ExportJobPayload payload) {
   }
 }
 
+({int newIdx, sf.PdfPage page, Rect bounds, double scaleX, double scaleY})?
+_resolveExportPageTarget({
+  required sf.PdfDocument doc,
+  required List<Rect> origPageBounds,
+  required List<int> oldToNewPageIdx,
+  required int origIdx,
+}) {
+  if (origIdx < 0 || origIdx >= origPageBounds.length) return null;
+  final newIdx = oldToNewPageIdx[origIdx];
+  if (newIdx < 0 || newIdx >= doc.pages.count) return null;
+  final page = doc.pages[newIdx];
+  final bounds = origPageBounds[origIdx];
+  return (
+    newIdx: newIdx,
+    page: page,
+    bounds: bounds,
+    scaleX: page.size.width / bounds.width,
+    scaleY: page.size.height / bounds.height,
+  );
+}
+
 void _drawExportTextAnnotations({
   required sf.PdfDocument doc,
   required List<ExportTextAnnotationDto> annotations,
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   int activeHighlightPageIdx = -1;
   int activeHighlightColorArgb = 0;
   sf.PdfPath? activeHighlightPath;
@@ -189,15 +209,14 @@ void _drawExportTextAnnotations({
   }
 
   for (final ta in annotations) {
-    final origIdx = ta.pageNumber - 1;
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = _resolveExportPageTarget(
+      doc: doc,
+      origPageBounds: origPageBounds,
+      oldToNewPageIdx: oldToNewPageIdx,
+      origIdx: ta.pageNumber - 1,
+    );
+    if (target == null) continue;
+    final (:newIdx, :page, :bounds, :scaleX, :scaleY) = target;
 
     final scaledRects = <Rect>[
       for (final (rl, rt, rw, rh) in ta.rects)
@@ -261,7 +280,6 @@ void _drawExportStrokes({
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   int strokeBatchPageIdx = -1;
   int strokeBatchColorArgb = 0;
   int strokeBatchWidthTenths = 0;
@@ -286,15 +304,14 @@ void _drawExportStrokes({
 
   for (final stroke in strokes) {
     if (stroke.points.isEmpty) continue;
-    final origIdx = findOrigPageIndex(origPageBounds, stroke.points.first.$2);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = _resolveExportPageTarget(
+      doc: doc,
+      origPageBounds: origPageBounds,
+      oldToNewPageIdx: oldToNewPageIdx,
+      origIdx: findOrigPageIndex(origPageBounds, stroke.points.first.$2),
+    );
+    if (target == null) continue;
+    final (:newIdx, :page, :bounds, :scaleX, :scaleY) = target;
 
     if (stroke.points.length == 1) {
       flushStrokeBatch();
@@ -373,17 +390,15 @@ void _drawExportShapes({
   required List<Rect> origPageBounds,
   required List<int> oldToNewPageIdx,
 }) {
-  final origPageCount = origPageBounds.length;
   for (final shape in shapes) {
-    final origIdx = findOrigPageIndex(origPageBounds, shape.startY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = _resolveExportPageTarget(
+      doc: doc,
+      origPageBounds: origPageBounds,
+      oldToNewPageIdx: oldToNewPageIdx,
+      origIdx: findOrigPageIndex(origPageBounds, shape.startY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final start = roundPdfOffset(Offset(
       (shape.startX - bounds.left) * scaleX,
@@ -463,21 +478,19 @@ List<FallbackRequest> _drawExportTextBoxes({
   required List<int> oldToNewPageIdx,
   required Map<String, sf.PdfBitmap> bitmapCache,
 }) {
-  final origPageCount = origPageBounds.length;
   final Map<String, sf.PdfFont> fontCache = {};
   final wordWrapFormat = sf.PdfStringFormat(wordWrap: sf.PdfWordWrapType.word);
   final List<FallbackRequest> missingFallbacks = [];
 
   for (final tb in payload.textBoxes) {
-    final origIdx = findOrigPageIndex(origPageBounds, tb.posY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = _resolveExportPageTarget(
+      doc: doc,
+      origPageBounds: origPageBounds,
+      oldToNewPageIdx: oldToNewPageIdx,
+      origIdx: findOrigPageIndex(origPageBounds, tb.posY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final pos = roundPdfOffset(Offset(
       ((tb.posX - bounds.left) + 4) * scaleX,
@@ -530,7 +543,7 @@ List<FallbackRequest> _drawExportTextBoxes({
       );
     } catch (_) {
       final fallbackKey =
-          '${pdfFontSize.toStringAsFixed(2)}|${tb.colorArgb}|${tbWidth.toStringAsFixed(1)}|${tb.text}';
+          '${payload.textBoxFont.name}|${pdfFontSize.toStringAsFixed(2)}|${tb.colorArgb}|${tbWidth.toStringAsFixed(1)}|${tb.text}';
       if (payload.preRasterizedFallbacks.containsKey(fallbackKey)) {
         final raster = payload.preRasterizedFallbacks[fallbackKey];
         if (raster != null) {
@@ -552,6 +565,7 @@ List<FallbackRequest> _drawExportTextBoxes({
         missingFallbacks.add(FallbackRequest(
           key: fallbackKey,
           text: tb.text,
+          textBoxFont: payload.textBoxFont,
           colorArgb: tb.colorArgb,
           fontSize: pdfFontSize,
           maxWidth: tbWidth,
@@ -570,17 +584,15 @@ void _drawExportImages({
   required List<int> oldToNewPageIdx,
   required Map<String, sf.PdfBitmap> bitmapCache,
 }) {
-  final origPageCount = origPageBounds.length;
   for (final img in payload.images) {
-    final origIdx = findOrigPageIndex(origPageBounds, img.posY);
-    if (origIdx < 0 || origIdx >= origPageCount) continue;
-    final newIdx = oldToNewPageIdx[origIdx];
-    if (newIdx < 0 || newIdx >= doc.pages.count) continue;
-
-    final page = doc.pages[newIdx];
-    final bounds = origPageBounds[origIdx];
-    final scaleX = page.size.width / bounds.width;
-    final scaleY = page.size.height / bounds.height;
+    final target = _resolveExportPageTarget(
+      doc: doc,
+      origPageBounds: origPageBounds,
+      oldToNewPageIdx: oldToNewPageIdx,
+      origIdx: findOrigPageIndex(origPageBounds, img.posY),
+    );
+    if (target == null) continue;
+    final (newIdx: _, :page, :bounds, :scaleX, :scaleY) = target;
 
     final pos = roundPdfOffset(Offset(
       (img.posX - bounds.left) * scaleX,

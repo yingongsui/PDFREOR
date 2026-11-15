@@ -16,14 +16,63 @@ enum AppFontFamily {
   serif,     // Serif (Classical / SongTi / Mincho / Times Roman)
   monospace; // Monospace (Code / Courier)
 
-  String get cssFontFamily {
+  String get fontFamily {
     switch (this) {
       case AppFontFamily.serif:
-        return 'serif';
+        if (Platform.isLinux) return 'Liberation Serif';
+        return 'Times New Roman';
       case AppFontFamily.monospace:
-        return 'monospace';
+        if (Platform.isMacOS) return 'Menlo';
+        if (Platform.isWindows) return 'Consolas';
+        if (Platform.isLinux) return 'DejaVu Sans Mono';
+        return 'Courier New';
       case AppFontFamily.sansSerif:
-        return 'sans-serif';
+        if (Platform.isMacOS) return 'Helvetica Neue';
+        if (Platform.isWindows) return 'Segoe UI';
+        if (Platform.isLinux) return 'Noto Sans';
+        return 'Arial';
+    }
+  }
+
+  List<String> get fontFamilyFallback {
+    switch (this) {
+      case AppFontFamily.serif:
+        return const [
+          'Times New Roman',
+          'Georgia',
+          'Times',
+          'Liberation Serif',
+          'DejaVu Serif',
+          'Noto Serif',
+          'Songti SC',
+          'Hiragino Mincho ProN',
+          'SimSun',
+          'Noto Serif CJK SC',
+        ];
+      case AppFontFamily.monospace:
+        return const [
+          'Menlo',
+          'Consolas',
+          'Courier New',
+          'Courier',
+          'Liberation Mono',
+          'DejaVu Sans Mono',
+          'Noto Sans Mono',
+        ];
+      case AppFontFamily.sansSerif:
+        return const [
+          'Helvetica Neue',
+          'Segoe UI',
+          'Arial',
+          'Noto Sans',
+          'Liberation Sans',
+          'DejaVu Sans',
+          'PingFang SC',
+          'Hiragino Sans',
+          'Apple SD Gothic Neo',
+          'Microsoft YaHei',
+          'Noto Sans CJK SC',
+        ];
     }
   }
 }

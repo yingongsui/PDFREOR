@@ -117,6 +117,7 @@ class RasterizedBitmapDto {
 class FallbackRequest {
   final String key;
   final String text;
+  final AppFontFamily textBoxFont;
   final int colorArgb;
   final double fontSize;
   final double maxWidth;
@@ -124,6 +125,7 @@ class FallbackRequest {
   const FallbackRequest({
     required this.key,
     required this.text,
+    required this.textBoxFont,
     required this.colorArgb,
     required this.fontSize,
     required this.maxWidth,

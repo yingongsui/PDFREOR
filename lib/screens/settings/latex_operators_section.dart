@@ -116,8 +116,9 @@ class LatexOperatorsCard extends StatelessWidget {
                             ),
                             title: Text(
                               op,
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
+                              style: TextStyle(
+                                fontFamily: AppFontFamily.monospace.fontFamily,
+                                fontFamilyFallback: AppFontFamily.monospace.fontFamilyFallback,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -361,7 +362,11 @@ class _AddOperatorDialogState extends State<AddOperatorDialog> {
           TextField(
             controller: _controller,
             autofocus: true,
-            style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontFamily: AppFontFamily.monospace.fontFamily,
+              fontFamilyFallback: AppFontFamily.monospace.fontFamilyFallback,
+              fontWeight: FontWeight.w600,
+            ),
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               hintText: r'e.g. \vec{v}, \mathbb{R}, \nabla',

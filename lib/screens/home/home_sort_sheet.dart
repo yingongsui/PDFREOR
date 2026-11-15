@@ -2,6 +2,34 @@ import 'package:flutter/material.dart';
 import 'home_dialogs.dart';
 import 'home_models.dart';
 
+class _SortOption<T> {
+  final T value;
+  final String label;
+  final IconData icon;
+
+  const _SortOption(this.value, this.label, this.icon);
+}
+
+const List<_SortOption<FolderSortType>> _folderSortOptions = [
+  _SortOption(FolderSortType.nameAsc, 'Name: A to Z', Icons.sort_by_alpha_rounded),
+  _SortOption(FolderSortType.nameDesc, 'Name: Z to A', Icons.sort_by_alpha_rounded),
+  _SortOption(FolderSortType.pathAsc, 'Path: A to Z', Icons.folder_open_rounded),
+  _SortOption(FolderSortType.pathDesc, 'Path: Z to A', Icons.folder_open_rounded),
+  _SortOption(FolderSortType.fileCountDesc, 'Files: Most First', Icons.format_list_numbered_rounded),
+  _SortOption(FolderSortType.fileCountAsc, 'Files: Fewest First', Icons.format_list_numbered_rounded),
+  _SortOption(FolderSortType.dateDesc, 'Date: Newest First', Icons.calendar_today_rounded),
+  _SortOption(FolderSortType.dateAsc, 'Date: Oldest First', Icons.history_rounded),
+];
+
+const List<_SortOption<SortType>> _fileSortOptions = [
+  _SortOption(SortType.dateDesc, 'Date: Newest First', Icons.calendar_today_rounded),
+  _SortOption(SortType.dateAsc, 'Date: Oldest First', Icons.history_rounded),
+  _SortOption(SortType.nameAsc, 'Name: A to Z', Icons.sort_by_alpha_rounded),
+  _SortOption(SortType.nameDesc, 'Name: Z to A', Icons.sort_by_alpha_rounded),
+  _SortOption(SortType.sizeDesc, 'Size: Largest First', Icons.storage_rounded),
+  _SortOption(SortType.sizeAsc, 'Size: Smallest First', Icons.data_usage_rounded),
+];
+
 void showHomeSortOptionsSheet(
   BuildContext context, {
   required FolderSortType initialFolderSort,
@@ -43,222 +71,38 @@ void showHomeSortOptionsSheet(
                     ],
                   ),
                   const SizedBox(height: 18),
-
-                  // Folder Sorting Header
-                  Row(
-                    children: [
-                      Icon(Icons.folder_rounded, size: 16, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'FOLDER SORTING',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
+                  _buildSortSectionHeader(
+                    icon: Icons.folder_rounded,
+                    title: 'FOLDER SORTING',
+                    theme: theme,
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.nameAsc,
-                        label: 'Name: A to Z',
-                        icon: Icons.sort_by_alpha_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.nameDesc,
-                        label: 'Name: Z to A',
-                        icon: Icons.sort_by_alpha_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.pathAsc,
-                        label: 'Path: A to Z',
-                        icon: Icons.folder_open_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.pathDesc,
-                        label: 'Path: Z to A',
-                        icon: Icons.folder_open_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.fileCountDesc,
-                        label: 'Files: Most First',
-                        icon: Icons.format_list_numbered_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.fileCountAsc,
-                        label: 'Files: Fewest First',
-                        icon: Icons.format_list_numbered_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.dateDesc,
-                        label: 'Date: Newest First',
-                        icon: Icons.calendar_today_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<FolderSortType>(
-                        current: currentFolderSort,
-                        target: FolderSortType.dateAsc,
-                        label: 'Date: Oldest First',
-                        icon: Icons.history_rounded,
-                        onSelected: (val) {
-                          currentFolderSort = val;
-                          onFolderSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                    ],
+                  _buildSortChipGroup<FolderSortType>(
+                    options: _folderSortOptions,
+                    current: currentFolderSort,
+                    theme: theme,
+                    onSelected: (val) {
+                      currentFolderSort = val;
+                      onFolderSortChanged(val);
+                      setSheetState(() {});
+                    },
                   ),
                   const SizedBox(height: 20),
-
-                  // File Sorting Header
-                  Row(
-                    children: [
-                      Icon(Icons.description_rounded, size: 16, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'FILE SORTING',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
+                  _buildSortSectionHeader(
+                    icon: Icons.description_rounded,
+                    title: 'FILE SORTING',
+                    theme: theme,
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.dateDesc,
-                        label: 'Date: Newest First',
-                        icon: Icons.calendar_today_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.dateAsc,
-                        label: 'Date: Oldest First',
-                        icon: Icons.history_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.nameAsc,
-                        label: 'Name: A to Z',
-                        icon: Icons.sort_by_alpha_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.nameDesc,
-                        label: 'Name: Z to A',
-                        icon: Icons.sort_by_alpha_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.sizeDesc,
-                        label: 'Size: Largest First',
-                        icon: Icons.storage_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                      _buildSortChip<SortType>(
-                        current: currentFileSort,
-                        target: SortType.sizeAsc,
-                        label: 'Size: Smallest First',
-                        icon: Icons.data_usage_rounded,
-                        onSelected: (val) {
-                          currentFileSort = val;
-                          onFileSortChanged(val);
-                          setSheetState(() {});
-                        },
-                        theme: theme,
-                      ),
-                    ],
+                  _buildSortChipGroup<SortType>(
+                    options: _fileSortOptions,
+                    current: currentFileSort,
+                    theme: theme,
+                    onSelected: (val) {
+                      currentFileSort = val;
+                      onFileSortChanged(val);
+                      setSheetState(() {});
+                    },
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -268,6 +112,51 @@ void showHomeSortOptionsSheet(
         },
       );
     },
+  );
+}
+
+Widget _buildSortSectionHeader({
+  required IconData icon,
+  required String title,
+  required ThemeData theme,
+}) {
+  return Row(
+    children: [
+      Icon(icon, size: 16, color: theme.colorScheme.primary),
+      const SizedBox(width: 6),
+      Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.8,
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildSortChipGroup<T>({
+  required List<_SortOption<T>> options,
+  required T current,
+  required ValueChanged<T> onSelected,
+  required ThemeData theme,
+}) {
+  return Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (final option in options)
+        _buildSortChip<T>(
+          current: current,
+          target: option.value,
+          label: option.label,
+          icon: option.icon,
+          onSelected: onSelected,
+          theme: theme,
+        ),
+    ],
   );
 }
 

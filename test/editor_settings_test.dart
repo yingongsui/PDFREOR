@@ -61,5 +61,25 @@ void main() {
       AnnotationPersistenceMode.fileDefault,
     );
   });
+
+  test('AppFontFamily exposes distinct concrete font families and fallbacks', () {
+    final families = {
+      AppFontFamily.sansSerif.fontFamily,
+      AppFontFamily.serif.fontFamily,
+      AppFontFamily.monospace.fontFamily,
+    };
+    expect(families.length, 3);
+    expect(families.contains('sans-serif'), isFalse);
+    expect(families.contains('serif'), isFalse);
+    expect(families.contains('monospace'), isFalse);
+
+    expect(AppFontFamily.sansSerif.fontFamilyFallback, isNotEmpty);
+    expect(AppFontFamily.serif.fontFamilyFallback, isNotEmpty);
+    expect(AppFontFamily.monospace.fontFamilyFallback, isNotEmpty);
+    expect(
+      AppFontFamily.serif.fontFamilyFallback.first,
+      'Times New Roman',
+    );
+  });
 }
 

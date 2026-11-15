@@ -451,9 +451,14 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                     : _fontSize,
                 fontWeight: FontWeight.w600,
                 height: 1.3,
-                fontFamily: widget.textBox.isLatex
-                    ? 'monospace'
-                    : widget.textBoxFont.cssFontFamily,
+                fontFamily: (widget.textBox.isLatex
+                        ? AppFontFamily.monospace
+                        : widget.textBoxFont)
+                    .fontFamily,
+                fontFamilyFallback: (widget.textBox.isLatex
+                        ? AppFontFamily.monospace
+                        : widget.textBoxFont)
+                    .fontFamilyFallback,
               ),
               decoration: InputDecoration(
                 isDense: true,
@@ -538,7 +543,8 @@ class _TextBoxCanvasItemState extends State<TextBoxCanvasItem> {
                   fontSize: widget.textBox.fontSize,
                   fontWeight: FontWeight.w500,
                   height: 1.3,
-                  fontFamily: widget.textBoxFont.cssFontFamily,
+                  fontFamily: widget.textBoxFont.fontFamily,
+                  fontFamilyFallback: widget.textBoxFont.fontFamilyFallback,
                 ),
               ),
             ),

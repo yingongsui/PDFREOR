@@ -275,6 +275,8 @@ class PdfExportService {
           color: textColor,
           fontSize: req.fontSize * renderScale,
           fontWeight: FontWeight.w500,
+          fontFamily: req.textBoxFont.fontFamily,
+          fontFamilyFallback: req.textBoxFont.fontFamilyFallback,
           height: 1.3,
         ),
       ),

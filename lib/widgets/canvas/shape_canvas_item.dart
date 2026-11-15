@@ -231,61 +231,53 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
             ),
           if (widget.isSelected) ...[
             if (isRectOrCircle) ...[
-              CanvasDragHandle(
+              _buildRectCornerHandle(
                 position: const Offset(kPadding, kPadding),
                 touchSize: handleTouchSize,
                 visualSize: handleVisualSize,
                 borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(newLeft, newTop), Offset(maxX, maxY));
-                },
-                onPanEnd: _endDrag,
+                minX: minX,
+                minY: minY,
+                maxX: maxX,
+                maxY: maxY,
+                adjustLeft: true,
+                adjustTop: true,
               ),
-              CanvasDragHandle(
+              _buildRectCornerHandle(
                 position: Offset(kPadding + width, kPadding),
                 touchSize: handleTouchSize,
                 visualSize: handleVisualSize,
                 borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newTop = math.min(minY + deltaDoc.dy, maxY - 12.0);
-                  widget.onUpdate(Offset(minX, newTop), Offset(newRight, maxY));
-                },
-                onPanEnd: _endDrag,
+                minX: minX,
+                minY: minY,
+                maxX: maxX,
+                maxY: maxY,
+                adjustLeft: false,
+                adjustTop: true,
               ),
-              CanvasDragHandle(
+              _buildRectCornerHandle(
                 position: Offset(kPadding, kPadding + height),
                 touchSize: handleTouchSize,
                 visualSize: handleVisualSize,
                 borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newLeft = math.min(minX + deltaDoc.dx, maxX - 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(newLeft, minY), Offset(maxX, newBottom));
-                },
-                onPanEnd: _endDrag,
+                minX: minX,
+                minY: minY,
+                maxX: maxX,
+                maxY: maxY,
+                adjustLeft: true,
+                adjustTop: false,
               ),
-              CanvasDragHandle(
+              _buildRectCornerHandle(
                 position: Offset(kPadding + width, kPadding + height),
                 touchSize: handleTouchSize,
                 visualSize: handleVisualSize,
                 borderWidth: handleBorderWidth,
-                onPanStart: (_) => _startDrag(),
-                onPanUpdate: (details) {
-                  final deltaDoc = details.delta / _currentScale;
-                  final newRight = math.max(maxX + deltaDoc.dx, minX + 12.0);
-                  final newBottom = math.max(maxY + deltaDoc.dy, minY + 12.0);
-                  widget.onUpdate(Offset(minX, minY), Offset(newRight, newBottom));
-                },
-                onPanEnd: _endDrag,
+                minX: minX,
+                minY: minY,
+                maxX: maxX,
+                maxY: maxY,
+                adjustLeft: false,
+                adjustTop: false,
               ),
             ] else ...[
               CanvasDragHandle(
@@ -333,5 +325,35 @@ class _ShapeCanvasItemState extends State<ShapeCanvasItem> {
     }
 
     return content;
+  }
+
+  Widget _buildRectCornerHandle({
+    required Offset position,
+    required double touchSize,
+    required double visualSize,
+    required double borderWidth,
+    required double minX,
+    required double minY,
+    required double maxX,
+    required double maxY,
+    required bool adjustLeft,
+    required bool adjustTop,
+  }) {
+    return CanvasDragHandle(
+      position: position,
+      touchSize: touchSize,
+      visualSize: visualSize,
+      borderWidth: borderWidth,
+      onPanStart: (_) => _startDrag(),
+      onPanUpdate: (details) {
+        final deltaDoc = details.delta / _currentScale;
+        final nextLeft = adjustLeft ? math.min(minX + deltaDoc.dx, maxX - 12.0) : minX;
+        final nextRight = adjustLeft ? maxX : math.max(maxX + deltaDoc.dx, minX + 12.0);
+        final nextTop = adjustTop ? math.min(minY + deltaDoc.dy, maxY - 12.0) : minY;
+        final nextBottom = adjustTop ? maxY : math.max(maxY + deltaDoc.dy, minY + 12.0);
+        widget.onUpdate(Offset(nextLeft, nextTop), Offset(nextRight, nextBottom));
+      },
+      onPanEnd: _endDrag,
+    );
   }
 }

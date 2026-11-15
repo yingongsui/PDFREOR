@@ -199,10 +199,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               _refresh(() {
                                 _oneShotShape = null;
                                 if (_drawingController.shapes.isNotEmpty) {
-                                  _selectedShapeId = _drawingController.shapes.last.id;
-                                  _selectedStrokeId = null;
-                                  _selectedImageId = null;
-                                  _selectedTextAnnotationId = null;
+                                  _selectExclusiveAnnotation(
+                                    shapeId: _drawingController.shapes.last.id,
+                                  );
                                 }
                               });
                               _notifyDirtyIfChanged();
@@ -211,77 +210,31 @@ extension _PdfTabContentBuild on PdfTabContentState {
                             hasActiveTextSelection: _hasActiveTextSelection,
                             editingTextBoxId: _editingTextBoxId,
                             onEditingTextBoxChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _editingTextBoxId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                  } else if (_activeTool == EditorTool.textBox ||
+                              if (!mounted) return;
+                              _refresh(() {
+                                if (id != null) {
+                                  _selectExclusiveAnnotation(editingTextBoxId: id);
+                                } else {
+                                  _editingTextBoxId = null;
+                                  if (_activeTool == EditorTool.textBox ||
                                       _activeTool == EditorTool.latexBox) {
                                     _activeTool = EditorTool.select;
                                   }
-                                });
-                              }
+                                }
+                              });
                             },
                             selectedShapeId: _selectedShapeId,
-                            onSelectedShapeChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedShapeId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
-                            },
+                            onSelectedShapeChanged: (id) =>
+                                _handleExclusiveSelectionChange(id, (v) => _selectedShapeId = v, clearShape: false),
                             selectedStrokeId: _selectedStrokeId,
-                            onSelectedStrokeChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedStrokeId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
-                            },
+                            onSelectedStrokeChanged: (id) =>
+                                _handleExclusiveSelectionChange(id, (v) => _selectedStrokeId = v, clearStroke: false),
                             selectedImageId: _selectedImageId,
-                            onSelectedImageChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedImageId = id;
-                                  if (id != null) {
-                                    _selectedTextAnnotationId = null;
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
-                            },
+                            onSelectedImageChanged: (id) =>
+                                _handleExclusiveSelectionChange(id, (v) => _selectedImageId = v, clearImage: false),
                             selectedTextAnnotationId: _selectedTextAnnotationId,
-                            onSelectedTextAnnotationChanged: (id) {
-                              if (mounted) {
-                                _refresh(() {
-                                  _selectedTextAnnotationId = id;
-                                  if (id != null) {
-                                    _selectedShapeId = null;
-                                    _selectedStrokeId = null;
-                                    _selectedImageId = null;
-                                    _editingTextBoxId = null;
-                                  }
-                                });
-                              }
-                            },
+                            onSelectedTextAnnotationChanged: (id) =>
+                                _handleExclusiveSelectionChange(id, (v) => _selectedTextAnnotationId = v, clearTextAnnotation: false),
                             onPointerEraserStateChanged: (pressed) {
                               if (_isPointerButtonPressed != pressed) {
                                 _refresh(() {
@@ -298,10 +251,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               _refresh(() {
                                 _activeTool = EditorTool.select;
                                 if (_drawingController.shapes.isNotEmpty) {
-                                  _selectedShapeId = _drawingController.shapes.last.id;
-                                  _selectedStrokeId = null;
-                                  _selectedImageId = null;
-                                  _selectedTextAnnotationId = null;
+                                  _selectExclusiveAnnotation(
+                                    shapeId: _drawingController.shapes.last.id,
+                                  );
                                 }
                               });
                               _notifyDirtyIfChanged();
@@ -505,4 +457,38 @@ extension _PdfTabContentBuild on PdfTabContentState {
           );
   }
 
+  void _selectExclusiveAnnotation({
+    String? editingTextBoxId,
+    String? shapeId,
+    String? strokeId,
+    String? imageId,
+    String? textAnnotationId,
+  }) {
+    _editingTextBoxId = editingTextBoxId;
+    _selectedShapeId = shapeId;
+    _selectedStrokeId = strokeId;
+    _selectedImageId = imageId;
+    _selectedTextAnnotationId = textAnnotationId;
+  }
+
+  void _handleExclusiveSelectionChange(
+    String? id,
+    void Function(String? id) assignSelected, {
+    bool clearShape = true,
+    bool clearStroke = true,
+    bool clearImage = true,
+    bool clearTextAnnotation = true,
+  }) {
+    if (!mounted) return;
+    _refresh(() {
+      if (id != null) {
+        if (clearShape) _selectedShapeId = null;
+        if (clearStroke) _selectedStrokeId = null;
+        if (clearImage) _selectedImageId = null;
+        if (clearTextAnnotation) _selectedTextAnnotationId = null;
+        _editingTextBoxId = null;
+      }
+      assignSelected(id);
+    });
+  }
 }
