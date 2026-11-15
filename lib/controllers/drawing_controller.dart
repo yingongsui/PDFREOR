@@ -141,6 +141,7 @@ class DrawingController extends ChangeNotifier {
 
   DrawingStroke? findStrokeById(String? id) => _findById(_strokes, id, (s) => s.id);
   DrawnShape? findShapeById(String? id) => _findById(_shapes, id, (s) => s.id);
+  DrawnImage? findImageById(String? id) => _findById(_images, id, (i) => i.id);
   DrawnTextBox? findTextBoxById(String? id) => _findById(_textBoxes, id, (t) => t.id);
   DrawnTextAnnotation? findTextAnnotationById(String? id) =>
       _findById(_textAnnotations, id, (ta) => ta.id);

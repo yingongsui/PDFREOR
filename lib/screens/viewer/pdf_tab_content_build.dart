@@ -202,6 +202,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                 if (_drawingController.shapes.isNotEmpty) {
                                   _selectedShapeId = _drawingController.shapes.last.id;
                                   _selectedStrokeId = null;
+                                  _selectedImageId = null;
                                   _selectedTextAnnotationId = null;
                                 }
                               });
@@ -218,6 +219,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                     _selectedTextAnnotationId = null;
                                     _selectedShapeId = null;
                                     _selectedStrokeId = null;
+                                    _selectedImageId = null;
                                   } else if (_activeTool == EditorTool.textBox ||
                                       _activeTool == EditorTool.latexBox) {
                                     _activeTool = EditorTool.select;
@@ -233,6 +235,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                   if (id != null) {
                                     _selectedTextAnnotationId = null;
                                     _selectedStrokeId = null;
+                                    _selectedImageId = null;
                                     _editingTextBoxId = null;
                                   }
                                 });
@@ -246,6 +249,21 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                   if (id != null) {
                                     _selectedTextAnnotationId = null;
                                     _selectedShapeId = null;
+                                    _selectedImageId = null;
+                                    _editingTextBoxId = null;
+                                  }
+                                });
+                              }
+                            },
+                            selectedImageId: _selectedImageId,
+                            onSelectedImageChanged: (id) {
+                              if (mounted) {
+                                _refresh(() {
+                                  _selectedImageId = id;
+                                  if (id != null) {
+                                    _selectedTextAnnotationId = null;
+                                    _selectedShapeId = null;
+                                    _selectedStrokeId = null;
                                     _editingTextBoxId = null;
                                   }
                                 });
@@ -259,6 +277,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                   if (id != null) {
                                     _selectedShapeId = null;
                                     _selectedStrokeId = null;
+                                    _selectedImageId = null;
                                     _editingTextBoxId = null;
                                   }
                                 });
@@ -282,6 +301,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                                 if (_drawingController.shapes.isNotEmpty) {
                                   _selectedShapeId = _drawingController.shapes.last.id;
                                   _selectedStrokeId = null;
+                                  _selectedImageId = null;
                                   _selectedTextAnnotationId = null;
                                 }
                               });

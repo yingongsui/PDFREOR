@@ -168,6 +168,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   String? _selectedTextAnnotationId;
   String? _selectedShapeId;
   String? _selectedStrokeId;
+  String? _selectedImageId;
   final List<Rect> _pageDocBounds = [];
   List<Size> _pdfPageSizes = const [];
   final ValueNotifier<Rect?> _textSelectionLocalRectNotifier = ValueNotifier<Rect?>(null);
@@ -365,6 +366,10 @@ class PdfTabContentState extends State<PdfTabContent> {
     }
     if (_selectedStrokeId != null) {
       setState(() => _selectedStrokeId = null);
+      return true;
+    }
+    if (_selectedImageId != null) {
+      setState(() => _selectedImageId = null);
       return true;
     }
     if (_editingTextBoxId != null) {

@@ -316,6 +316,7 @@ extension _PdfTabContentSync on PdfTabContentState {
       _selectedTextAnnotationId = null;
       _selectedShapeId = null;
       _selectedStrokeId = null;
+      _selectedImageId = null;
       _editingTextBoxId = null;
       _selectedUnionPdfrxDocRect = unionPdfrxRect;
       _selectedPageDocRects = pageRectsMap;
@@ -564,6 +565,7 @@ extension _PdfTabContentSync on PdfTabContentState {
             _selectedTextAnnotationId = null;
             _selectedShapeId = null;
             _selectedStrokeId = null;
+            _selectedImageId = null;
             _editingTextBoxId = null;
             _hasActiveTextSelection = true;
           });
