@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Ubuntu build dependencies
         run: |
@@ -108,7 +108,7 @@ jobs:
           rm -rf "${PKG_ROOT}"
 
       - name: Upload Ubuntu artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pdfreor-ubuntu
           path: |
