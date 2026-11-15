@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
+import '../services/pdf_scanner_service.dart';
 import '../services/platform_bridge.dart';
+import 'home/home_dialogs.dart';
 import 'settings/latex_operators_section.dart';
 import 'settings/settings_widgets.dart';
 
@@ -15,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   EditorSettings _editorSettings = const EditorSettings();
+  Set<String> _hiddenFolders = {};
 
   @override
   void initState() {
@@ -22,6 +25,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     EditorSettingsService.loadSettings().then((s) {
       if (mounted) setState(() => _editorSettings = s);
     });
+    _loadHiddenFolders();
+  }
+
+  Future<void> _loadHiddenFolders() async {
+    final hidden = await PdfScannerService.instance.getHiddenFolders();
+    if (mounted) {
+      setState(() => _hiddenFolders = hidden);
+    }
   }
 
   Future<void> _updateEditorSettings(EditorSettings updated) async {
@@ -297,19 +308,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           SettingsCard(
             padding: null,
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.cleaning_services_rounded, color: theme.colorScheme.primary, size: 22),
+                  ),
+                  title: const Text('Clear Thumbnail Cache', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Free memory and reload document previews'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => showClearThumbnailCacheDialog(context),
                 ),
-                child: Icon(Icons.cleaning_services_rounded, color: theme.colorScheme.primary, size: 22),
-              ),
-              title: const Text('Clear Thumbnail Cache', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Free memory and reload document previews'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => showClearThumbnailCacheDialog(context),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.visibility_off_outlined, color: theme.colorScheme.primary, size: 22),
+                  ),
+                  title: const Text('Hidden Folders', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    _hiddenFolders.isEmpty
+                        ? 'No folders hidden from the home screen'
+                        : '${_hiddenFolders.length} ${_hiddenFolders.length == 1 ? 'folder' : 'folders'} hidden • Tap to restore',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () async {
+                    await showHiddenFoldersDialog(
+                      context,
+                      hiddenFolders: _hiddenFolders,
+                      onUnhideFolder: (folderPath) async {
+                        await PdfScannerService.instance.setFolderHidden(folderPath, false);
+                        await _loadHiddenFolders();
+                      },
+                      onUnhideAll: () async {
+                        await PdfScannerService.instance.clearHiddenFolders();
+                        await _loadHiddenFolders();
+                      },
+                    );
+                  },
+                ),
+              ],
             ),
           ),
 
@@ -360,7 +407,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 1.0.0',
+                            'Version 1.1.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,

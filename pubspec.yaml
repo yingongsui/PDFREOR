@@ -2,7 +2,7 @@ name: pdfreor
 description: "A fast, responsive PDF reader and annotation editor for desktop."
 publish_to: 'none'
 
-version: 1.0.0+1000
+version: 1.1.0+1100
 
 environment:
   sdk: ^3.12.2

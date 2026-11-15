@@ -273,6 +273,7 @@ extension _HomeScreenAppBar on _HomeScreenState {
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
+              await _reloadHiddenFolders();
             },
           ),
         ],

@@ -8,9 +8,7 @@ extension _HomeScreenViews on _HomeScreenState {
   List<MapEntry<String, List<PdfFileInfo>>> _computeSortedGroupedEntries() {
     final Map<String, List<PdfFileInfo>> groups = {};
     for (final file in _filteredFiles) {
-      final folder = file.parentDirectoryPath.isNotEmpty
-          ? file.parentDirectoryPath
-          : 'Root Directory';
+      final folder = _folderKeyForFile(file);
       groups.putIfAbsent(folder, () => []).add(file);
     }
 
@@ -108,6 +106,48 @@ extension _HomeScreenViews on _HomeScreenState {
             ),
           ),
           const Spacer(),
+          if (_hiddenFolders.isNotEmpty) ...[
+            SizedBox(
+              height: 28,
+              child: Material(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _showHiddenFoldersDialog,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.visibility_off_outlined,
+                          size: 13,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${_hiddenFolders.length} hidden',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           // Fixed-size Collapse All / Expand All Toggle
           SizedBox(
             width: 100,
@@ -174,6 +214,8 @@ extension _HomeScreenViews on _HomeScreenState {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () => _toggleFolderCollapse(folderPath),
+          onLongPress: () => _showFolderContextMenu(folderPath, files),
+          onSecondaryTap: () => _showFolderContextMenu(folderPath, files),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -294,6 +336,10 @@ extension _HomeScreenViews on _HomeScreenState {
     }
 
     if (_filteredFiles.isEmpty) {
+      final hasAllHidden =
+          _allFiles.isNotEmpty &&
+          _searchController.text.trim().isEmpty &&
+          _hiddenFolders.isNotEmpty;
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -305,20 +351,28 @@ extension _HomeScreenViews on _HomeScreenState {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.picture_as_pdf_outlined,
+                  hasAllHidden
+                      ? Icons.visibility_off_outlined
+                      : Icons.picture_as_pdf_outlined,
                   size: 72,
                   color: theme.colorScheme.outline.withValues(alpha: 0.5),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  _allFiles.isEmpty ? 'No PDF Files Found' : 'No Matching PDFs Found',
+                  _allFiles.isEmpty
+                      ? 'No PDF Files Found'
+                      : hasAllHidden
+                          ? 'All Folders Hidden'
+                          : 'No Matching PDFs Found',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _allFiles.isEmpty
                       ? 'Pull down to refresh and rescan, or use the buttons below to import PDF files.'
-                      : 'Please try searching with different keywords.',
+                      : hasAllHidden
+                          ? '${_hiddenFolders.length} ${_hiddenFolders.length == 1 ? 'folder is' : 'folders are'} hidden from the home screen.'
+                          : 'Please try searching with different keywords.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
                 ),
@@ -328,16 +382,24 @@ extension _HomeScreenViews on _HomeScreenState {
                   runSpacing: 8,
                   alignment: WrapAlignment.center,
                   children: [
-                    FilledButton.icon(
-                      onPressed: _importFiles,
-                      icon: const Icon(Icons.file_open_rounded),
-                      label: const Text('Pick Files'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _pickAndScanDirectory,
-                      icon: const Icon(Icons.folder_open_rounded),
-                      label: const Text('Pick Folder'),
-                    ),
+                    if (hasAllHidden)
+                      FilledButton.icon(
+                        onPressed: _showHiddenFoldersDialog,
+                        icon: const Icon(Icons.visibility_outlined),
+                        label: const Text('Manage Hidden Folders'),
+                      )
+                    else ...[
+                      FilledButton.icon(
+                        onPressed: _importFiles,
+                        icon: const Icon(Icons.file_open_rounded),
+                        label: const Text('Pick Files'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _pickAndScanDirectory,
+                        icon: const Icon(Icons.folder_open_rounded),
+                        label: const Text('Pick Folder'),
+                      ),
+                    ],
                   ],
                 ),
               ],

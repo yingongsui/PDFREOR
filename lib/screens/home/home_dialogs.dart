@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import '../../models/pdf_file_info.dart';
 
 class SheetDragHandle extends StatelessWidget {
@@ -390,4 +391,185 @@ class _RenameFileDialogState extends State<RenameFileDialog> {
       ],
     );
   }
+}
+
+void showFolderContextMenu(
+  BuildContext context, {
+  required String folderName,
+  required String folderPath,
+  required int fileCount,
+  required bool isCollapsed,
+  required VoidCallback onToggleCollapse,
+  required VoidCallback onHideFolder,
+}) {
+  final theme = Theme.of(context);
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SheetDragHandle(margin: EdgeInsets.only(top: 12, bottom: 8)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.folder_rounded,
+                      color: theme.colorScheme.primary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          folderName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$fileCount ${fileCount == 1 ? 'file' : 'files'} • $folderPath',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(
+                isCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+              ),
+              title: Text(isCollapsed ? 'Expand Folder' : 'Collapse Folder'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onToggleCollapse();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined),
+              title: const Text('Hide Folder'),
+              subtitle: const Text('Stop showing PDFs in this folder on the home screen'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onHideFolder();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> showHiddenFoldersDialog(
+  BuildContext context, {
+  required Set<String> hiddenFolders,
+  required Future<void> Function(String folderPath) onUnhideFolder,
+  required Future<void> Function() onUnhideAll,
+}) {
+  final currentHidden = hiddenFolders.toList()..sort();
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          final theme = Theme.of(context);
+          return AlertDialog(
+            title: const Text('Hidden Folders'),
+            content: SizedBox(
+              width: 440,
+              child: currentHidden.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'No hidden folders.',
+                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    )
+                  : ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: currentHidden.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final folderPath = currentHidden[index];
+                          final baseName = p.basename(folderPath);
+                          final folderName = baseName.isNotEmpty ? baseName : folderPath;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.folder_off_outlined,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            title: Text(
+                              folderName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              folderPath,
+                              style: const TextStyle(fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: TextButton(
+                              onPressed: () async {
+                                await onUnhideFolder(folderPath);
+                                setDialogState(() {
+                                  currentHidden.remove(folderPath);
+                                });
+                              },
+                              child: const Text('Show'),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+            ),
+            actions: [
+              if (currentHidden.isNotEmpty)
+                TextButton(
+                  onPressed: () async {
+                    await onUnhideAll();
+                    setDialogState(() {
+                      currentHidden.clear();
+                    });
+                  },
+                  child: const Text('Show All'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }

@@ -15,6 +15,7 @@ class PdfScannerService {
   Set<String> _customFolders = {};
   Set<String> _importedFilePaths = {};
   Set<String> _collapsedFolders = {};
+  Set<String> _hiddenFolders = {};
   String _folderSort = 'nameAsc';
   String _fileSort = 'dateDesc';
   Future<void>? _loadFuture;
@@ -39,6 +40,9 @@ class PdfScannerService {
         if (map['collapsedFolders'] is List) {
           _collapsedFolders = (map['collapsedFolders'] as List).map((e) => e.toString()).toSet();
         }
+        if (map['hiddenFolders'] is List) {
+          _hiddenFolders = (map['hiddenFolders'] as List).map((e) => e.toString()).toSet();
+        }
         if (map['folderSort'] is String) {
           _folderSort = map['folderSort'] as String;
         }
@@ -57,6 +61,7 @@ class PdfScannerService {
         'customFolders': _customFolders.toList(),
         'importedFilePaths': _importedFilePaths.toList(),
         'collapsedFolders': _collapsedFolders.toList(),
+        'hiddenFolders': _hiddenFolders.toList(),
         'folderSort': _folderSort,
         'fileSort': _fileSort,
       };
@@ -87,6 +92,29 @@ class PdfScannerService {
       _collapsedFolders.removeAll(folderPaths);
     }
     await _saveLibrary();
+  }
+
+  Future<Set<String>> getHiddenFolders() async {
+    await _ensureLibraryLoaded();
+    return Set.from(_hiddenFolders);
+  }
+
+  Future<void> setFolderHidden(String folderPath, bool isHidden) async {
+    await _ensureLibraryLoaded();
+    final changed = isHidden
+        ? _hiddenFolders.add(folderPath)
+        : _hiddenFolders.remove(folderPath);
+    if (changed) {
+      await _saveLibrary();
+    }
+  }
+
+  Future<void> clearHiddenFolders() async {
+    await _ensureLibraryLoaded();
+    if (_hiddenFolders.isNotEmpty) {
+      _hiddenFolders.clear();
+      await _saveLibrary();
+    }
   }
 
   Future<String> getFolderSort() async {
@@ -197,6 +225,7 @@ class PdfScannerService {
   /// Scan a specific user-selected directory in a background isolate.
   Future<List<PdfFileInfo>> scanCustomDirectory(String directoryPath) async {
     await addCustomFolder(directoryPath);
+    await setFolderHidden(directoryPath, false);
     final dir = Directory(directoryPath);
     if (!await dir.exists()) return [];
 
