@@ -279,6 +279,29 @@ extension _HomeScreenActions on _HomeScreenState {
     );
   }
 
+  Future<String> _resolveUniqueDestinationPath(
+    String dirPath,
+    String baseName,
+    String ext, {
+    required bool isCopy,
+  }) async {
+    var destPath = p.join(dirPath, '$baseName$ext');
+    if (!await File(destPath).exists()) return destPath;
+
+    if (isCopy) {
+      destPath = p.join(dirPath, '$baseName (Copy)$ext');
+      if (!await File(destPath).exists()) return destPath;
+    }
+
+    int counter = isCopy ? 2 : 1;
+    while (true) {
+      final suffix = isCopy ? 'Copy $counter' : '$counter';
+      destPath = p.join(dirPath, '$baseName ($suffix)$ext');
+      if (!await File(destPath).exists()) return destPath;
+      counter++;
+    }
+  }
+
   Future<void> _pasteFilesToFolder(String targetFolderPath) async {
     if (_clipboardFiles.isEmpty) return;
 
@@ -312,12 +335,12 @@ extension _HomeScreenActions on _HomeScreenState {
         if (isCut) {
           final destPath = p.join(targetDir.path, p.basename(sourcePath));
           if (destPath != sourcePath) {
-            String finalDestPath = destPath;
-            int counter = 1;
-            while (await File(finalDestPath).exists()) {
-              finalDestPath = p.join(targetDir.path, '$baseName ($counter)$ext');
-              counter++;
-            }
+            final finalDestPath = await _resolveUniqueDestinationPath(
+              targetDir.path,
+              baseName,
+              ext,
+              isCopy: false,
+            );
             try {
               await sourceFile.rename(finalDestPath);
             } on FileSystemException {
@@ -338,15 +361,12 @@ extension _HomeScreenActions on _HomeScreenState {
             successCount++;
           }
         } else {
-          String destPath = p.join(targetDir.path, p.basename(sourcePath));
-          if (await File(destPath).exists()) {
-            destPath = p.join(targetDir.path, '$baseName (Copy)$ext');
-            int counter = 2;
-            while (await File(destPath).exists()) {
-              destPath = p.join(targetDir.path, '$baseName (Copy $counter)$ext');
-              counter++;
-            }
-          }
+          final destPath = await _resolveUniqueDestinationPath(
+            targetDir.path,
+            baseName,
+            ext,
+            isCopy: true,
+          );
           await sourceFile.copy(destPath);
           successCount++;
         }

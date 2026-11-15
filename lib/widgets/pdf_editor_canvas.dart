@@ -130,6 +130,34 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
     widget.onSelectedTextAnnotationChanged?.call(id);
   }
 
+  void _clearAllSelections({
+    String? exceptShapeId,
+    String? exceptStrokeId,
+    String? exceptImageId,
+    String? exceptTextId,
+  }) {
+    if (exceptShapeId != null) {
+      _setSelectedShape(exceptShapeId);
+    } else if (_selectedShapeId != null) {
+      _setSelectedShape(null);
+    }
+    if (exceptStrokeId != null) {
+      _setSelectedStroke(exceptStrokeId);
+    } else if (_selectedStrokeId != null) {
+      _setSelectedStroke(null);
+    }
+    if (exceptImageId != null) {
+      _setSelectedImage(exceptImageId);
+    } else if (_selectedImageId != null) {
+      _setSelectedImage(null);
+    }
+    if (exceptTextId != null) {
+      _setSelectedTextAnnotation(exceptTextId);
+    } else if (_selectedTextAnnotationId != null) {
+      _setSelectedTextAnnotation(null);
+    }
+  }
+
   bool get _isDrawingMode =>
       widget.activeTool == EditorTool.pen ||
       widget.activeTool == EditorTool.shape ||
@@ -177,57 +205,26 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
       final hitShape = widget.controller.hitTestShape(docPos, 24.0);
       if (hitShape != null) {
-        _setSelectedShape(hitShape.id);
-        _setSelectedStroke(null);
-        _setSelectedImage(null);
-        _setSelectedTextAnnotation(null);
+        _clearAllSelections(exceptShapeId: hitShape.id);
         return;
       }
 
       final hitStroke = widget.controller.hitTestStroke(docPos, 20.0);
       if (hitStroke != null) {
-        _setSelectedStroke(hitStroke.id);
-        _setSelectedShape(null);
-        _setSelectedImage(null);
-        _setSelectedTextAnnotation(null);
+        _clearAllSelections(exceptStrokeId: hitStroke.id);
         return;
       }
 
       final hitTa = widget.controller.hitTestTextAnnotation(docPos, 6.0);
       if (hitTa != null) {
-        _setSelectedTextAnnotation(hitTa.id);
-        _setSelectedShape(null);
-        _setSelectedStroke(null);
-        _setSelectedImage(null);
+        _clearAllSelections(exceptTextId: hitTa.id);
         return;
       }
 
-      if (_selectedShapeId != null) {
-        _setSelectedShape(null);
-      }
-      if (_selectedStrokeId != null) {
-        _setSelectedStroke(null);
-      }
-      if (_selectedImageId != null) {
-        _setSelectedImage(null);
-      }
-      if (_selectedTextAnnotationId != null) {
-        _setSelectedTextAnnotation(null);
-      }
+      _clearAllSelections();
     } else if (!canSelectElements) {
       if (isStylus || widget.activeTool == EditorTool.shape) {
-        if (_selectedShapeId != null) {
-          _setSelectedShape(null);
-        }
-        if (_selectedStrokeId != null) {
-          _setSelectedStroke(null);
-        }
-        if (_selectedImageId != null) {
-          _setSelectedImage(null);
-        }
-        if (_selectedTextAnnotationId != null) {
-          _setSelectedTextAnnotation(null);
-        }
+        _clearAllSelections();
       }
     }
   }
@@ -441,7 +438,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          'Drag with finger to draw ${widget.oneShotShape!.label}',
+                          'Drag to draw ${widget.oneShotShape!.label}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

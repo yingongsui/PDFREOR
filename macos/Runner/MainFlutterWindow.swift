@@ -42,8 +42,6 @@ class MainFlutterWindow: NSWindow {
     )
     desktopChannel.setMethodCallHandler { call, result in
       switch call.method {
-      case "isStylusConnected":
-        result(false)
       case "openUrl":
         guard let args = call.arguments as? [String: Any],
               let rawUrl = args["url"] as? String,

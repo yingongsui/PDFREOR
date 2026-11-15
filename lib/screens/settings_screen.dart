@@ -44,19 +44,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Section: Permissions
           const SettingsSectionHeader(title: 'Permissions', icon: Icons.security_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          SettingsCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                   Row(
                     children: [
                       Container(
@@ -110,10 +101,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
           ),
 
@@ -122,49 +112,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Section: Editor & Text Box Font
           const SettingsSectionHeader(title: 'Editor & Annotation', icon: Icons.edit_note_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.font_download_outlined, color: theme.colorScheme.primary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Text Box Font Style',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Font family used during input typing and in the saved PDF',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+          SettingsCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SettingsCardHeader(
+                  icon: Icons.font_download_outlined,
+                  title: 'Text Box Font Style',
+                  subtitle: 'Font family used during input typing and in the saved PDF',
+                ),
+                const SizedBox(height: 14),
                   SegmentedButton<AppFontFamily>(
                     segments: const [
                       ButtonSegment<AppFontFamily>(
@@ -223,7 +180,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-            ),
           ),
 
           const SizedBox(height: 12),
@@ -237,48 +193,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
 
           // Annotation Persistence Mode Card
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.layers_rounded, color: theme.colorScheme.primary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Annotation Persistence Mode',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                            ),
-                            Text(
-                              'Default format on open and tap-Save (hold Save for options)',
-                              style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
+          SettingsCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SettingsCardHeader(
+                  icon: Icons.layers_rounded,
+                  title: 'Annotation Persistence Mode',
+                  subtitle: 'Default format on open and tap-Save (hold Save for options)',
+                  titleFontSize: 15,
+                ),
+                const SizedBox(height: 12),
                   for (final option in const [
                     (
                       mode: AnnotationPersistenceMode.fileDefault,
@@ -362,7 +287,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                 ],
               ),
-            ),
           ),
 
           const SizedBox(height: 24),
@@ -370,14 +294,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Section: Storage & Cache
           const SettingsSectionHeader(title: 'Storage & Maintenance', icon: Icons.storage_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
+          SettingsCard(
+            padding: null,
             child: ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -399,19 +317,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Section: About
           const SettingsSectionHeader(title: 'About', icon: Icons.info_outline_rounded),
           const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          SettingsCard(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                   Row(
                     children: [
                       Container(
@@ -449,7 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 3.0.0',
+                            'Version 1.0.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,
@@ -564,7 +474,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-            ),
           ),
           const SizedBox(height: 32),
         ],

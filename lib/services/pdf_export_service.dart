@@ -49,11 +49,6 @@ class PdfExportService {
   static List<Rect> mergeCollinearRects(List<Rect> rects) =>
       geom.mergeCollinearRects(rects);
 
-  /// Atomically writes [bytes] to [targetFile] via [AtomicFileStore].
-  static Future<void> atomicWriteBytes(File targetFile, List<int> bytes) {
-    return AtomicFileStore.writeBytes(targetFile, bytes);
-  }
-
   /// Renders all annotations from [drawingController], applies staged page deletions
   /// and blank page additions, and returns the resulting PDF bytes.
   /// Heavy PDF parsing, path building, and compression run off the main UI isolate.
@@ -408,7 +403,7 @@ class PdfExportService {
       pdfPageSizes: pdfPageSizes,
       embedEditableData: embedEditableData,
     );
-    await atomicWriteBytes(file, finalBytes);
+    await AtomicFileStore.writeBytes(file, finalBytes);
     return finalBytes;
   }
 }

@@ -88,7 +88,7 @@ void showAddPdfOptionsSheet(
                   child: Icon(Icons.create_new_folder_rounded, color: theme.colorScheme.secondary),
                 ),
                 title: const Text('Add Folder'),
-                subtitle: const Text('Scan and add all PDFs from a folder or SD card directory'),
+                subtitle: const Text('Scan and add all PDFs from a selected folder'),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   onAddFolder();

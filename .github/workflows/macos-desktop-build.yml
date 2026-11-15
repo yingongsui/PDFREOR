@@ -33,16 +33,23 @@ jobs:
       - name: Build macOS release app
         run: flutter build macos --release
 
-      - name: Package macOS app bundle
+      - name: Package macOS DMG
         run: |
-          mkdir -p dist
-          ditto -c -k --keepParent \
-            build/macos/Build/Products/Release/pdfreor.app \
-            dist/pdfreor-macos.zip
+          rm -rf dist/dmg_root
+          mkdir -p dist/dmg_root
+          ditto build/macos/Build/Products/Release/pdfreor.app dist/dmg_root/pdfreor.app
+          ln -s /Applications dist/dmg_root/Applications
+          hdiutil create \
+            -volname "PDFREOR" \
+            -srcfolder dist/dmg_root \
+            -ov \
+            -format UDZO \
+            dist/pdfreor-macos.dmg
+          rm -rf dist/dmg_root
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: pdfreor-macos
-          path: dist/pdfreor-macos.zip
+          path: dist/pdfreor-macos.dmg
           retention-days: 14

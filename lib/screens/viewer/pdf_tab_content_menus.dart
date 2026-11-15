@@ -136,7 +136,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
       final text = clipboardData?.text?.trim();
       if (text != null && text.isNotEmpty) {
         final newBox = DrawnTextBox(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: nextAnnotationId(),
           text: text,
           position: docPos,
           color: _activeColor,

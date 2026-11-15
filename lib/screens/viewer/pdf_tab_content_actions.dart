@@ -77,8 +77,7 @@ extension _PdfTabContentActions on PdfTabContentState {
   }
 
   void _onToolSelected(EditorTool tool) {
-    final willEnableSelection = _oneShotShape == null &&
-        (_stylusOnlyMode || _isStylusDetected || tool == EditorTool.select);
+    final willEnableSelection = _oneShotShape == null && tool == EditorTool.select;
     if (!willEnableSelection) {
       _clearPdfTextSelection();
     }

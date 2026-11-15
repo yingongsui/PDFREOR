@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../services/editor_settings_service.dart';
+import 'settings_widgets.dart';
 
 class LatexOperatorsCard extends StatelessWidget {
   final EditorSettings editorSettings;
@@ -150,49 +151,16 @@ class LatexOperatorsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final operators = editorSettings.latexQuickOperators;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.functions_rounded, color: theme.colorScheme.primary, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Math Formula Operators',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Quick shortcuts available when editing formulas • Drag to reorder',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
+    return SettingsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SettingsCardHeader(
+            icon: Icons.functions_rounded,
+            title: 'Math Formula Operators',
+            subtitle: 'Quick shortcuts available when editing formulas • Drag to reorder',
+          ),
+          const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -349,7 +317,6 @@ class LatexOperatorsCard extends StatelessWidget {
               ],
             ),
           ],
-        ),
       ),
     );
   }

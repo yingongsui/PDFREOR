@@ -464,15 +464,7 @@ extension _PdfTabContentSync on PdfTabContentState {
   }
 
   Future<void> _handlePdfLinkTap(pdfrx.PdfLink link) async {
-    if (_oneShotShape != null || _isEraserActive) {
-      return;
-    }
-    if (!_stylusOnlyMode &&
-        (_activeTool == EditorTool.pen ||
-            _activeTool == EditorTool.eraser ||
-            _activeTool == EditorTool.shape ||
-            _activeTool == EditorTool.textBox ||
-            _activeTool == EditorTool.latexBox)) {
+    if (_oneShotShape != null || _isEraserActive || _activeTool != EditorTool.select) {
       return;
     }
 

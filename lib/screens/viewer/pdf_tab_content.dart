@@ -287,17 +287,10 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   bool get _isEraserActive => _isHardwareButtonPressed || _isPointerButtonPressed;
 
-  bool get _shouldEnableTextSelection {
-    if (_oneShotShape != null) return false;
-    if (_stylusOnlyMode || _isStylusDetected) return true;
-    return _activeTool == EditorTool.select;
-  }
+  bool get _shouldEnableTextSelection =>
+      _oneShotShape == null && _activeTool == EditorTool.select;
 
-  bool get _shouldAllowViewerPan {
-    if (_oneShotShape != null) return false;
-    if (_stylusOnlyMode) return true;
-    return _activeTool == EditorTool.select;
-  }
+  bool get _shouldAllowViewerPan => _shouldEnableTextSelection;
 
   bool get _hasUnsavedChanges {
     final hasPageChanges = _deletedZeroIndexedPages.isNotEmpty || _addedPagesCount > 0;
@@ -313,8 +306,6 @@ class PdfTabContentState extends State<PdfTabContent> {
   double _activeFontSize = 16.0;
   Offset _toolbarPosition = const Offset(12, 100);
   bool _toolbarCollapsed = false;
-  final bool _isStylusDetected = false;
-  bool _stylusOnlyMode = false;
   AppFontFamily _textBoxFont = AppFontFamily.sansSerif;
 
   void _applyEditorSettings(EditorSettings s) {
