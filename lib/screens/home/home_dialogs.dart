@@ -4,6 +4,108 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import '../../models/pdf_file_info.dart';
 
+String folderDisplayName(String folderPath) {
+  final baseName = p.basename(folderPath);
+  return baseName.isNotEmpty ? baseName : folderPath;
+}
+
+class _ContextMenuAction {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+
+  const _ContextMenuAction({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+  });
+}
+
+void _showContextMenuSheet(
+  BuildContext context, {
+  required IconData headerIcon,
+  required String title,
+  required String subtitle,
+  required List<_ContextMenuAction> actions,
+}) {
+  final theme = Theme.of(context);
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      return SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetDragHandle(margin: EdgeInsets.only(top: 12, bottom: 8)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        headerIcon,
+                        color: theme.colorScheme.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              for (final action in actions)
+                ListTile(
+                  leading: Icon(action.icon),
+                  title: Text(action.title),
+                  subtitle: action.subtitle != null ? Text(action.subtitle!) : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    action.onTap();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class SheetDragHandle extends StatelessWidget {
   final EdgeInsetsGeometry margin;
 
@@ -184,113 +286,38 @@ void showPdfFileContextMenu(
   required VoidCallback onShare,
   required VoidCallback onShowDetails,
 }) {
-  final theme = Theme.of(context);
-  showModalBottomSheet(
-    context: context,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (sheetContext) {
-      return SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SheetDragHandle(margin: EdgeInsets.only(top: 12, bottom: 8)),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        Icons.picture_as_pdf_rounded,
-                        color: theme.colorScheme.primary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            file.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${file.formattedSize} • ${file.parentDirectoryName}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.visibility_outlined),
-                title: Text(
-                  selectedCount > 1 ? 'Open Reader ($selectedCount)' : 'Open Reader',
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  onOpenReader();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline_rounded),
-                title: const Text('Rename'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  onRename();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.open_in_new_rounded),
-                title: const Text('Open with External App'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  onOpenExternal();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: Text(
-                  selectedCount > 1 ? 'Share Selected ($selectedCount)' : 'Share',
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  onShare();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('File Info'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  onShowDetails();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
-    },
+  _showContextMenuSheet(
+    context,
+    headerIcon: Icons.picture_as_pdf_rounded,
+    title: file.name,
+    subtitle: '${file.formattedSize} • ${file.parentDirectoryName}',
+    actions: [
+      _ContextMenuAction(
+        icon: Icons.visibility_outlined,
+        title: selectedCount > 1 ? 'Open Reader ($selectedCount)' : 'Open Reader',
+        onTap: onOpenReader,
+      ),
+      _ContextMenuAction(
+        icon: Icons.drive_file_rename_outline_rounded,
+        title: 'Rename',
+        onTap: onRename,
+      ),
+      _ContextMenuAction(
+        icon: Icons.open_in_new_rounded,
+        title: 'Open with External App',
+        onTap: onOpenExternal,
+      ),
+      _ContextMenuAction(
+        icon: Icons.share_outlined,
+        title: selectedCount > 1 ? 'Share Selected ($selectedCount)' : 'Share',
+        onTap: onShare,
+      ),
+      _ContextMenuAction(
+        icon: Icons.info_outline,
+        title: 'File Info',
+        onTap: onShowDetails,
+      ),
+    ],
   );
 }
 
@@ -402,86 +429,24 @@ void showFolderContextMenu(
   required VoidCallback onToggleCollapse,
   required VoidCallback onHideFolder,
 }) {
-  final theme = Theme.of(context);
-  showModalBottomSheet(
-    context: context,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (sheetContext) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SheetDragHandle(margin: EdgeInsets.only(top: 12, bottom: 8)),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.folder_rounded,
-                      color: theme.colorScheme.primary,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          folderName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$fileCount ${fileCount == 1 ? 'file' : 'files'} • $folderPath',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: Icon(
-                isCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
-              ),
-              title: Text(isCollapsed ? 'Expand Folder' : 'Collapse Folder'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                onToggleCollapse();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.visibility_off_outlined),
-              title: const Text('Hide Folder'),
-              subtitle: const Text('Stop showing PDFs in this folder on the home screen'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                onHideFolder();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      );
-    },
+  _showContextMenuSheet(
+    context,
+    headerIcon: Icons.folder_rounded,
+    title: folderName,
+    subtitle: '$fileCount ${fileCount == 1 ? 'file' : 'files'} • $folderPath',
+    actions: [
+      _ContextMenuAction(
+        icon: isCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+        title: isCollapsed ? 'Expand Folder' : 'Collapse Folder',
+        onTap: onToggleCollapse,
+      ),
+      _ContextMenuAction(
+        icon: Icons.visibility_off_outlined,
+        title: 'Hide Folder',
+        subtitle: 'Stop showing PDFs in this folder on the home screen',
+        onTap: onHideFolder,
+      ),
+    ],
   );
 }
 
@@ -518,8 +483,7 @@ Future<void> showHiddenFoldersDialog(
                         separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final folderPath = currentHidden[index];
-                          final baseName = p.basename(folderPath);
-                          final folderName = baseName.isNotEmpty ? baseName : folderPath;
+                          final folderName = folderDisplayName(folderPath);
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(

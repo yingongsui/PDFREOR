@@ -58,6 +58,28 @@ class SettingsCard extends StatelessWidget {
   }
 }
 
+class SettingsIconBadge extends StatelessWidget {
+  final IconData icon;
+
+  const SettingsIconBadge({
+    super.key,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: theme.colorScheme.primary, size: 22),
+    );
+  }
+}
+
 class SettingsCardHeader extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -77,14 +99,7 @@ class SettingsCardHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: theme.colorScheme.primary, size: 22),
-        ),
+        SettingsIconBadge(icon: icon),
         const SizedBox(width: 12),
         Expanded(
           child: Column(

@@ -630,8 +630,7 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
   Future<void> _hideFolder(String folderPath) async {
-    final baseName = p.basename(folderPath);
-    final folderName = baseName.isNotEmpty ? baseName : folderPath;
+    final folderName = folderDisplayName(folderPath);
 
     _refresh(() {
       _hiddenFolders.add(folderPath);
@@ -678,11 +677,9 @@ extension _HomeScreenActions on _HomeScreenState {
   }
 
   void _showFolderContextMenu(String folderPath, List<PdfFileInfo> files) {
-    final baseName = p.basename(folderPath);
-    final folderName = baseName.isNotEmpty ? baseName : folderPath;
     showFolderContextMenu(
       context,
-      folderName: folderName,
+      folderName: folderDisplayName(folderPath),
       folderPath: folderPath,
       fileCount: files.length,
       isCollapsed: _collapsedFolders.contains(folderPath),

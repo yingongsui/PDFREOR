@@ -19,6 +19,58 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Reduce Ubuntu/GNOME GtkHeaderBar padding and height so the window title bar
+// stays compact while preserving Wayland/X11 window controls.
+static void apply_compact_header_bar_style(GtkWindow* window,
+                                           GtkHeaderBar* header_bar) {
+  gtk_style_context_add_class(
+      gtk_widget_get_style_context(GTK_WIDGET(header_bar)),
+      "compact-headerbar");
+
+  static gboolean css_registered = FALSE;
+  if (css_registered) {
+    return;
+  }
+
+  static const gchar* kCompactHeaderBarCss =
+      "headerbar.compact-headerbar,"
+      "headerbar.compact-headerbar.titlebar {"
+      "  min-height: 28px;"
+      "  padding-top: 2px;"
+      "  padding-bottom: 2px;"
+      "  padding-left: 8px;"
+      "  padding-right: 8px;"
+      "}"
+      "headerbar.compact-headerbar .title {"
+      "  padding-top: 0;"
+      "  padding-bottom: 0;"
+      "}"
+      "headerbar.compact-headerbar button,"
+      "headerbar.compact-headerbar button.titlebutton {"
+      "  min-height: 22px;"
+      "  min-width: 22px;"
+      "  margin-top: 0;"
+      "  margin-bottom: 0;"
+      "  padding: 2px;"
+      "}";
+
+  GtkCssProvider* css_provider = gtk_css_provider_new();
+  g_autoptr(GError) error = nullptr;
+  if (gtk_css_provider_load_from_data(css_provider, kCompactHeaderBarCss, -1,
+                                      &error)) {
+    GdkScreen* screen = gtk_window_get_screen(window);
+    if (screen != nullptr) {
+      gtk_style_context_add_provider_for_screen(
+          screen, GTK_STYLE_PROVIDER(css_provider),
+          GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+      css_registered = TRUE;
+    }
+  } else if (error != nullptr) {
+    g_warning("Failed to load compact header bar CSS: %s", error->message);
+  }
+  g_object_unref(css_provider);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -46,7 +98,9 @@ static void my_application_activate(GApplication* application) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
     gtk_header_bar_set_title(header_bar, "PDFREOR");
+    gtk_header_bar_set_has_subtitle(header_bar, FALSE);
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
+    apply_compact_header_bar_style(window, header_bar);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
     gtk_window_set_title(window, "PDFREOR");

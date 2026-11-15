@@ -19,8 +19,7 @@ extension _HomeScreenViews on _HomeScreenState {
     final latestDates = <String, DateTime>{};
 
     for (final e in entries) {
-      final base = p.basename(e.key);
-      lowerNames[e.key] = (base.isNotEmpty ? base : e.key).toLowerCase();
+      lowerNames[e.key] = folderDisplayName(e.key).toLowerCase();
       lowerPaths[e.key] = e.key.toLowerCase();
       if (_folderSortType == FolderSortType.dateDesc ||
           _folderSortType == FolderSortType.dateAsc) {
@@ -106,48 +105,6 @@ extension _HomeScreenViews on _HomeScreenState {
             ),
           ),
           const Spacer(),
-          if (_hiddenFolders.isNotEmpty) ...[
-            SizedBox(
-              height: 28,
-              child: Material(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: _showHiddenFoldersDialog,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.visibility_off_outlined,
-                          size: 13,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${_hiddenFolders.length} hidden',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
           // Fixed-size Collapse All / Expand All Toggle
           SizedBox(
             width: 100,
@@ -203,8 +160,7 @@ extension _HomeScreenViews on _HomeScreenState {
     ThemeData theme,
   ) {
     final isCollapsed = _collapsedFolders.contains(folderPath);
-    final baseName = p.basename(folderPath);
-    final folderName = baseName.isNotEmpty ? baseName : folderPath;
+    final folderName = folderDisplayName(folderPath);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),

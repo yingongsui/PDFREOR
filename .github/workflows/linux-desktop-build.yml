@@ -66,7 +66,8 @@ jobs:
                    "${PKG_ROOT}/opt/pdfreor" \
                    "${PKG_ROOT}/usr/bin" \
                    "${PKG_ROOT}/usr/share/applications" \
-                   "${PKG_ROOT}/usr/share/icons/hicolor/512x512/apps"
+                   "${PKG_ROOT}/usr/share/icons/hicolor/512x512/apps" \
+                   "${PKG_ROOT}/usr/share/icons/hicolor/scalable/apps"
 
           cp -r "${BUNDLE_DIR}/." "${PKG_ROOT}/opt/pdfreor/"
           chmod +x "${PKG_ROOT}/opt/pdfreor/pdfreor"
@@ -78,6 +79,7 @@ jobs:
           chmod 755 "${PKG_ROOT}/usr/bin/pdfreor"
 
           cp assets/app_icon.png "${PKG_ROOT}/usr/share/icons/hicolor/512x512/apps/pdfreor.png"
+          cp assets/app_icon_desktop.svg "${PKG_ROOT}/usr/share/icons/hicolor/scalable/apps/pdfreor.svg"
 
           cat << 'EOF' > "${PKG_ROOT}/usr/share/applications/pdfreor.desktop"
           [Desktop Entry]
