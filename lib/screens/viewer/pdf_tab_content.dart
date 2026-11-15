@@ -162,6 +162,21 @@ class PdfTabContentState extends State<PdfTabContent> {
     }
   }
 
+  bool get hasSelectedPdfText =>
+      _pdfViewerController.isReady &&
+      _pdfViewerController.textSelectionDelegate.hasSelectedText;
+
+  Future<bool> copySelectionFromShortcut() async {
+    if (!hasSelectedPdfText) {
+      return false;
+    }
+    final copied = await _pdfViewerController.textSelectionDelegate.copyTextSelection();
+    if (copied && mounted) {
+      _showViewerSnackBar('Copied to clipboard');
+    }
+    return copied;
+  }
+
   BuildContext? _contextMenuDialogContext;
 
   // Editor states

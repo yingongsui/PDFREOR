@@ -161,7 +161,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               scaleEnabled: _oneShotShape == null,
                               textSelectionParams: pdfrx.PdfTextSelectionParams(
                                 enabled: _shouldEnableTextSelection,
-                                enableSelectionHandles: true,
+                                enableSelectionHandles: PlatformBridge.isMobile ? true : null,
                                 showContextMenuAutomatically: false,
                                 onTextSelectionChange: _onTextSelectionChange,
                                 onSelectionHandlePanStart: _onSelectionHandlePanStart,

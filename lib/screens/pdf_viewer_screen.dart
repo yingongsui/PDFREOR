@@ -254,6 +254,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
       _activeTabState?.undoFromShortcut();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.keyC) {
+      final focusWidget = FocusManager.instance.primaryFocus?.context?.widget;
+      if (focusWidget is EditableText) {
+        return KeyEventResult.ignored;
+      }
+      final tabState = _activeTabState;
+      if (tabState != null && tabState.hasSelectedPdfText) {
+        tabState.copySelectionFromShortcut();
+        return KeyEventResult.handled;
+      }
+    }
     return KeyEventResult.ignored;
   }
 
