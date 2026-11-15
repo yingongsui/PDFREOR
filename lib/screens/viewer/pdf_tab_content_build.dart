@@ -159,6 +159,11 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               horizontalCacheExtent: 0.5,
                               panEnabled: _shouldAllowViewerPan,
                               scaleEnabled: _oneShotShape == null,
+                              matchTextColor: Colors.yellow.withValues(alpha: 0.42),
+                              activeMatchTextColor: Colors.deepOrange.withValues(alpha: 0.45),
+                              pagePaintCallbacks: [
+                                if (_textSearcher != null) _textSearcher!.pageTextMatchPaintCallback,
+                              ],
                               textSelectionParams: pdfrx.PdfTextSelectionParams(
                                 enabled: _shouldEnableTextSelection,
                                 enableSelectionHandles: true,
@@ -356,6 +361,24 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   onSave: () => _saveToOriginalFile(showFeedback: true),
                   onSaveOptions: _promptSaveMethodDialog,
                 ),
+                if (_isSearchVisible)
+                  Positioned(
+                    top: 10,
+                    left: 12,
+                    right: 12,
+                    child: PdfSearchBar(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      searcher: _textSearcher,
+                      matchCase: _searchMatchCase,
+                      onChanged: (_) => _runTextSearch(),
+                      onSubmitted: _onSearchSubmitted,
+                      onPrevious: _goToPreviousSearchMatch,
+                      onNext: _goToNextSearchMatch,
+                      onToggleMatchCase: _toggleSearchMatchCase,
+                      onClose: _closeSearch,
+                    ),
+                  ),
                 if (_isLoading)
                   Container(
                     color: _isDocumentLoaded

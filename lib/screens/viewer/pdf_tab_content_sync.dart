@@ -407,6 +407,8 @@ extension _PdfTabContentSync on PdfTabContentState {
       );
       _notifyDirtyIfChanged();
     }
+    _textSearcher?.dispose();
+    _textSearcher = controller.isReady ? pdfrx.PdfTextSearcher(controller) : null;
     _lastReportedZoom = controller.currentZoom;
     _isDocumentLoaded = true;
     final actualPage = controller.pageNumber ?? targetPage;
@@ -415,6 +417,13 @@ extension _PdfTabContentSync on PdfTabContentState {
       _currentPage = actualPage;
       _isLoading = false;
     });
+    if (_isSearchVisible && _searchController.text.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _runTextSearch(searchImmediately: true);
+        }
+      });
+    }
     if (!wasAlreadyLoaded && targetPage != _initialPageNumber) {
       _initialPageNumber = targetPage;
       ReadingProgressService.instance.saveLastPage(widget.file.path, targetPage);

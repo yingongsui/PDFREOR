@@ -23,6 +23,7 @@ import '../../widgets/pdf_editor_canvas.dart';
 import '../../widgets/pdf_fast_scrollbar.dart';
 import '../../widgets/pdf_floating_toolbar.dart';
 import '../../widgets/pdf_page_manager_dialog.dart';
+import 'pdf_search_bar.dart';
 import 'pdf_viewer_delegates.dart';
 
 part 'pdf_tab_content_sync.dart';
@@ -35,6 +36,7 @@ class PdfTabContent extends StatefulWidget {
   final bool initialStylusConnected;
   final VoidCallback? onDirtyChanged;
   final void Function(int currentPage, int totalPages)? onPageInfoChanged;
+  final ValueChanged<bool>? onSearchVisibilityChanged;
 
   const PdfTabContent({
     super.key,
@@ -42,6 +44,7 @@ class PdfTabContent extends StatefulWidget {
     this.initialStylusConnected = false,
     this.onDirtyChanged,
     this.onPageInfoChanged,
+    this.onSearchVisibilityChanged,
   });
 
   @override
@@ -112,6 +115,11 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   late final pdfrx.PdfViewerController _pdfViewerController;
   late final TransformationController _transformationController;
+  pdfrx.PdfTextSearcher? _textSearcher;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _isSearchVisible = false;
+  bool _searchMatchCase = false;
   final GlobalKey<PdfFastScrollbarState> _fastScrollbarKey = GlobalKey<PdfFastScrollbarState>();
   int? _edgeTapPointerId;
   Offset? _edgeTapDownPos;
@@ -147,8 +155,98 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   int get currentPage => _currentPage;
   int get pagesCount => _pagesCount;
+  bool get isSearchVisible => _isSearchVisible;
 
   void jumpToPage(int pageNumber) => _jumpToPage(pageNumber);
+
+  void toggleSearch() {
+    if (_isSearchVisible) {
+      _closeSearch();
+    } else {
+      _openSearch();
+    }
+  }
+
+  void _openSearch() {
+    if (!_isSearchVisible) {
+      setState(() => _isSearchVisible = true);
+      widget.onSearchVisibilityChanged?.call(true);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isSearchVisible) {
+        _searchFocusNode.requestFocus();
+      }
+    });
+    if (_searchController.text.isNotEmpty) {
+      _runTextSearch(searchImmediately: true);
+    }
+  }
+
+  void _closeSearch() {
+    _searchFocusNode.unfocus();
+    _textSearcher?.resetTextSearch();
+    if (_isSearchVisible) {
+      setState(() => _isSearchVisible = false);
+      widget.onSearchVisibilityChanged?.call(false);
+    }
+  }
+
+  void _runTextSearch({
+    bool searchImmediately = false,
+    bool forceRestart = false,
+  }) {
+    final searcher = _textSearcher;
+    if (searcher == null) return;
+    if (forceRestart) {
+      searcher.resetTextSearch();
+    }
+    searcher.startTextSearch(
+      _searchController.text,
+      caseInsensitive: !_searchMatchCase,
+      goToFirstMatch: true,
+      searchImmediately: searchImmediately,
+    );
+  }
+
+  void _onSearchSubmitted(String query) {
+    final searcher = _textSearcher;
+    if (searcher == null || query.isEmpty) return;
+    if (searcher.pattern == query && searcher.matches.isNotEmpty) {
+      _goToNextSearchMatch();
+    } else {
+      _runTextSearch(searchImmediately: true);
+    }
+  }
+
+  void _goToNextSearchMatch() {
+    final searcher = _textSearcher;
+    if (searcher == null || searcher.matches.isEmpty) return;
+    final idx = searcher.currentIndex;
+    if (idx == null || idx + 1 >= searcher.matches.length) {
+      searcher.goToMatchOfIndex(0);
+    } else {
+      searcher.goToNextMatch();
+    }
+  }
+
+  void _goToPreviousSearchMatch() {
+    final searcher = _textSearcher;
+    if (searcher == null || searcher.matches.isEmpty) return;
+    final idx = searcher.currentIndex;
+    if (idx == null || idx <= 0) {
+      searcher.goToMatchOfIndex(searcher.matches.length - 1);
+    } else {
+      searcher.goToPrevMatch();
+    }
+  }
+
+  void _toggleSearchMatchCase() {
+    setState(() => _searchMatchCase = !_searchMatchCase);
+    if (_searchController.text.isNotEmpty) {
+      _runTextSearch(searchImmediately: true, forceRestart: true);
+    }
+    _searchFocusNode.requestFocus();
+  }
 
   void notifyStylusConnected() => _notifyStylusConnected();
 
@@ -338,6 +436,10 @@ class PdfTabContentState extends State<PdfTabContent> {
       _pendingRestoredBundle = null;
       _useInMemoryCleanBaseRef = false;
       _documentRef = null;
+      _textSearcher?.dispose();
+      _textSearcher = null;
+      _isSearchVisible = false;
+      widget.onSearchVisibilityChanged?.call(false);
       _isDocumentLoaded = false;
       _errorMessage = null;
       _isLoading = true;
@@ -362,6 +464,10 @@ class PdfTabContentState extends State<PdfTabContent> {
     _originalBaseBytes = null;
     _loadingWatchdogTimer?.cancel();
     EditorSettingsService.settingsNotifier.removeListener(_onExternalSettingsChanged);
+    _textSearcher?.dispose();
+    _textSearcher = null;
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     _pdfViewerController.removeListener(_onPdfMatrixChanged);
     _textSelectionLocalRectNotifier.dispose();
     _transformationController.dispose();
@@ -382,6 +488,10 @@ class PdfTabContentState extends State<PdfTabContent> {
   Future<bool> promptSaveIfDirty() => _promptSaveIfDirty();
 
   bool handleBackPress() {
+    if (_isSearchVisible) {
+      _closeSearch();
+      return true;
+    }
     if (_selectedTextAnnotationId != null) {
       setState(() => _selectedTextAnnotationId = null);
       return true;

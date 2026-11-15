@@ -254,6 +254,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     }
 
     final theme = Theme.of(context);
+    final isFindOpen = _activeTabState?.isSearchVisible ?? false;
 
     return PopScope(
       canPop: false,
@@ -274,6 +275,34 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Tooltip(
+                message: 'Find in document',
+                child: InkWell(
+                  onTap: () => _activeTabState?.toggleSearch(),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isFindOpen
+                          ? const Color(0xFF1E90FF).withValues(alpha: 0.16)
+                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF1E90FF),
+                        width: 1.4,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: Color(0xFF1E90FF),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: PopupMenuButton<int>(
@@ -443,6 +472,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                         if (i == PdfTabManager.instance.activeIndex) {
                           _onPageInfoChanged(current, total);
                         }
+                      },
+                      onSearchVisibilityChanged: (_) {
+                        if (mounted) setState(() {});
                       },
                     )
                   : const SizedBox.shrink(),
