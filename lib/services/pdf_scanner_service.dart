@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/pdf_file_info.dart';
+import 'app_data_directory.dart';
 import 'atomic_file_store.dart';
 
 class PdfScannerService {
@@ -20,14 +21,17 @@ class PdfScannerService {
   String _fileSort = 'dateDesc';
   Future<void>? _loadFuture;
 
+  Future<File> _getLibraryFile() {
+    return AppDataDirectory.resolveFile(_libraryFileName);
+  }
+
   Future<void> _ensureLibraryLoaded() {
     return _loadFuture ??= _loadLibraryFromDisk();
   }
 
   Future<void> _loadLibraryFromDisk() async {
     try {
-      final docDir = await getApplicationDocumentsDirectory();
-      final file = File('${docDir.path}/$_libraryFileName');
+      final file = await _getLibraryFile();
       if (await file.exists()) {
         final content = await file.readAsString();
         final map = jsonDecode(content) as Map<String, dynamic>;
@@ -55,8 +59,7 @@ class PdfScannerService {
 
   Future<void> _saveLibrary() async {
     try {
-      final docDir = await getApplicationDocumentsDirectory();
-      final file = File('${docDir.path}/$_libraryFileName');
+      final file = await _getLibraryFile();
       final data = {
         'customFolders': _customFolders.toList(),
         'importedFilePaths': _importedFilePaths.toList(),
@@ -176,19 +179,29 @@ class PdfScannerService {
   Future<List<Directory>> _getStorageDirectoriesToScan() async {
     final directoriesToScan = <Directory>[];
 
-    final docDir = await getApplicationDocumentsDirectory();
-    directoriesToScan.add(docDir);
-    final downloadDir = await getDownloadsDirectory();
-    if (downloadDir != null) {
-      directoriesToScan.add(downloadDir);
-    }
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      if (await docDir.exists()) {
+        directoriesToScan.add(docDir);
+      }
+    } catch (_) {}
+    try {
+      final downloadDir = await getDownloadsDirectory();
+      if (downloadDir != null &&
+          await downloadDir.exists() &&
+          !directoriesToScan.any((d) => d.path == downloadDir.path)) {
+        directoriesToScan.add(downloadDir);
+      }
+    } catch (_) {}
 
     await _ensureLibraryLoaded();
     for (final folderPath in _customFolders) {
-      final dir = Directory(folderPath);
-      if (await dir.exists() && !directoriesToScan.any((d) => d.path == dir.path)) {
-        directoriesToScan.add(dir);
-      }
+      try {
+        final dir = Directory(folderPath);
+        if (await dir.exists() && !directoriesToScan.any((d) => d.path == dir.path)) {
+          directoriesToScan.add(dir);
+        }
+      } catch (_) {}
     }
 
     // Remove redundant child paths when a parent directory is already queued for recursive scan

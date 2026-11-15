@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/editor_models.dart';
+import 'app_data_directory.dart';
 import 'atomic_file_store.dart';
 
 enum AnnotationPersistenceMode {
@@ -218,9 +218,8 @@ class EditorSettingsService {
   static final ValueNotifier<EditorSettings> settingsNotifier =
       ValueNotifier<EditorSettings>(const EditorSettings());
 
-  static Future<File> _getFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_fileName');
+  static Future<File> _getFile() {
+    return AppDataDirectory.resolveFile(_fileName);
   }
 
   static Future<EditorSettings> loadSettings() async {

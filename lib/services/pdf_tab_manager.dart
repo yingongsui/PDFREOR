@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/pdf_file_info.dart';
+import 'app_data_directory.dart';
 import 'atomic_file_store.dart';
 import 'reading_progress_service.dart';
 
@@ -29,9 +29,8 @@ class PdfTabManager extends ChangeNotifier {
           ? _openTabs[_activeIndex]
           : null;
 
-  Future<File> _getFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_fileName');
+  Future<File> _getFile() {
+    return AppDataDirectory.resolveFile(_fileName);
   }
 
   /// Initialize and load persisted tabs from disk.

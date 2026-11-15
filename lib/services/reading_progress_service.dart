@@ -3,7 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import '../services/app_data_directory.dart';
 import '../services/atomic_file_store.dart';
 
 /// Persists and restores the last visited 1-based page number per PDF file path.
@@ -26,9 +26,11 @@ class ReadingProgressService {
   Timer? _debounceTimer;
   Future<void> _writeQueue = Future.value();
 
-  Future<File> _getFile() async {
-    final dir = _storageDirOverride ?? await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_fileName');
+  Future<File> _getFile() {
+    return AppDataDirectory.resolveFile(
+      _fileName,
+      supportDirOverride: _storageDirOverride,
+    );
   }
 
   /// Loads persisted reading progress from disk.

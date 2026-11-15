@@ -28,6 +28,12 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>PDFREOR needs access to your Desktop folder to discover and edit PDF files.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>PDFREOR needs access to your Documents folder to discover and edit PDF files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>PDFREOR needs access to your Downloads folder to discover and edit PDF files.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
