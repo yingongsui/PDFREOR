@@ -629,6 +629,7 @@ class PdfSystemFontService {
   late final SystemFontResolver? _platformResolver = _createPlatformResolver();
   PdfFontManager? _fontManager;
   Future<void>? _initFuture;
+  bool _isPrepared = false;
 
   SystemFontResolver? _createPlatformResolver() {
     if (Platform.isMacOS) {
@@ -645,6 +646,11 @@ class PdfSystemFontService {
 
   PdfFontManager get fontManager => _fontManager ??= _buildFontManager();
 
+  /// Returns [fontManager] only once [prepare] has completed without error, so
+  /// a font initialization failure (e.g. missing console stderr handle on some
+  /// desktop environments) never blocks [PdfViewer] from opening documents.
+  PdfFontManager? get viewerFontManager => _isPrepared ? fontManager : null;
+
   PdfFontManager _buildFontManager() {
     final resolver = _platformResolver;
     if (resolver != null) {
@@ -657,11 +663,31 @@ class PdfSystemFontService {
     return _initFuture ??= _initInternal();
   }
 
+  Future<void> _tryAddFontFile({
+    required String face,
+    required String filePath,
+  }) async {
+    try {
+      await PdfrxEntryFunctions.instance.addFontFile(
+        face: face,
+        filePath: filePath,
+      );
+    } catch (_) {
+      // Non-fatal: continue registering remaining system fonts.
+    }
+  }
+
   Future<void> _initInternal() async {
     final resolver = _platformResolver;
     if (resolver == null) return;
 
-    await fontManager.prepare();
+    try {
+      await fontManager.prepare();
+      _isPrepared = true;
+    } catch (_) {
+      _isPrepared = false;
+      return;
+    }
 
     final sansPath = resolver.primaryCjkSansPath;
     final serifPath = resolver.primaryCjkSerifPath;
@@ -669,13 +695,13 @@ class PdfSystemFontService {
     final registrations = <Future<void>>[
       if (sansPath != null)
         for (final face in _preseededCjkSansFaces)
-          PdfrxEntryFunctions.instance.addFontFile(
+          _tryAddFontFile(
             face: face,
             filePath: sansPath,
           ),
       if (serifPath != null)
         for (final face in _preseededCjkSerifFaces)
-          PdfrxEntryFunctions.instance.addFontFile(
+          _tryAddFontFile(
             face: face,
             filePath: serifPath,
           ),

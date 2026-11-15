@@ -207,6 +207,18 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
         !hw.isControlPressed &&
         !hw.isAltPressed &&
         !hw.isShiftPressed &&
+        key == LogicalKeyboardKey.escape) {
+      final tabState = _activeTabState;
+      if (tabState != null && tabState.isFindBarVisible) {
+        tabState.closeFindBar();
+        return KeyEventResult.handled;
+      }
+    }
+
+    if (!hw.isMetaPressed &&
+        !hw.isControlPressed &&
+        !hw.isAltPressed &&
+        !hw.isShiftPressed &&
         (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace)) {
       final focusWidget = FocusManager.instance.primaryFocus?.context?.widget;
       if (focusWidget is EditableText) {
@@ -225,6 +237,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
       return KeyEventResult.ignored;
     }
 
+    if (key == LogicalKeyboardKey.keyF) {
+      _activeTabState?.openFindBar();
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.keyS) {
       _activeTabState?.saveFromShortcut();
       return KeyEventResult.handled;
@@ -319,6 +335,34 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Tooltip(
+                message: 'Find in PDF',
+                child: InkWell(
+                  onTap: () => _activeTabState?.toggleFindBar(),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: (_activeTabState?.isFindBarVisible ?? false)
+                          ? const Color(0xFF1E90FF).withValues(alpha: 0.18)
+                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF1E90FF),
+                        width: 1.4,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.search,
+                      size: 16,
+                      color: Color(0xFF1E90FF),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: PopupMenuButton<int>(
@@ -487,6 +531,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                         if (i == PdfTabManager.instance.activeIndex) {
                           _onPageInfoChanged(current, total);
                         }
+                      },
+                      onFindVisibilityChanged: () {
+                        if (mounted) setState(() {});
                       },
                     )
                   : const SizedBox.shrink(),

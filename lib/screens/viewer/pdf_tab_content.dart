@@ -23,6 +23,7 @@ import '../../widgets/pass_through_stack.dart';
 import '../../widgets/pdf_annotation_property_bar.dart';
 import '../../widgets/pdf_editor_canvas.dart';
 import '../../widgets/pdf_fast_scrollbar.dart';
+import '../../widgets/pdf_find_bar.dart';
 import '../../widgets/pdf_floating_toolbar.dart';
 import '../../widgets/pdf_page_manager_dialog.dart';
 import 'pdf_viewer_delegates.dart';
@@ -36,12 +37,14 @@ class PdfTabContent extends StatefulWidget {
   final PdfFileInfo file;
   final VoidCallback? onDirtyChanged;
   final void Function(int currentPage, int totalPages)? onPageInfoChanged;
+  final VoidCallback? onFindVisibilityChanged;
 
   const PdfTabContent({
     super.key,
     required this.file,
     this.onDirtyChanged,
     this.onPageInfoChanged,
+    this.onFindVisibilityChanged,
   });
 
   @override
@@ -152,7 +155,19 @@ class PdfTabContentState extends State<PdfTabContent> {
   String? _errorMessage;
   Timer? _loadingWatchdogTimer;
   Uint8List? _originalBaseBytes;
+  File? _cleanBaseTempFile;
   bool _isSaving = false;
+
+  // Document text search (Find) state
+  pdfrx.PdfTextSearcher? _textSearcher;
+  bool _isFindBarVisible = false;
+  bool _findMatchCase = false;
+  String _findQuery = '';
+  final TextEditingController _findTextController = TextEditingController();
+  final FocusNode _findFocusNode = FocusNode();
+  late final List<pdfrx.PdfViewerPagePaintCallback> _pagePaintCallbacks = [
+    _paintSearchMatches,
+  ];
 
   bool _lastCanUndo = false;
   bool _lastNotifiedDirty = false;
@@ -165,6 +180,44 @@ class PdfTabContentState extends State<PdfTabContent> {
   int get pagesCount => _pagesCount;
 
   void jumpToPage(int pageNumber) => _jumpToPage(pageNumber);
+
+  bool get isFindBarVisible => _isFindBarVisible;
+
+  void openFindBar() {
+    if (!_isFindBarVisible) {
+      setState(() {
+        _isFindBarVisible = true;
+      });
+      widget.onFindVisibilityChanged?.call();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _findFocusNode.requestFocus();
+      if (_findTextController.text.isNotEmpty) {
+        _findTextController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _findTextController.text.length,
+        );
+      }
+    });
+  }
+
+  void toggleFindBar() {
+    if (_isFindBarVisible) {
+      closeFindBar();
+    } else {
+      openFindBar();
+    }
+  }
+
+  void closeFindBar() {
+    if (!_isFindBarVisible && _findQuery.isEmpty) return;
+    _textSearcher?.resetTextSearch();
+    setState(() {
+      _isFindBarVisible = false;
+    });
+    widget.onFindVisibilityChanged?.call();
+  }
 
   Future<void> saveFromShortcut() => _saveToOriginalFile(showFeedback: true);
 
@@ -397,6 +450,11 @@ class PdfTabContentState extends State<PdfTabContent> {
       _reloadGeneration++;
       _baseNormalizedWidth = null;
       _originalBaseBytes = null;
+      _disposeCleanBaseTempFile();
+      _disposeTextSearcher();
+      _isFindBarVisible = false;
+      _findQuery = '';
+      _findTextController.clear();
       _pendingRestoredBundle = null;
       _useInMemoryCleanBaseRef = false;
       _documentRef = null;
@@ -419,6 +477,10 @@ class PdfTabContentState extends State<PdfTabContent> {
     _zoomSaveDebounceTimer?.cancel();
     ReadingProgressService.instance.flush().ignore();
     _originalBaseBytes = null;
+    _disposeCleanBaseTempFile();
+    _disposeTextSearcher();
+    _findTextController.dispose();
+    _findFocusNode.dispose();
     _loadingWatchdogTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_handleGlobalModifierKeyEvent);
     EditorSettingsService.settingsNotifier.removeListener(_onExternalSettingsChanged);
@@ -442,6 +504,10 @@ class PdfTabContentState extends State<PdfTabContent> {
   Future<bool> promptSaveIfDirty() => _promptSaveIfDirty();
 
   bool handleBackPress() {
+    if (_isFindBarVisible) {
+      closeFindBar();
+      return true;
+    }
     if (_selectedTextAnnotationId != null) {
       setState(() => _selectedTextAnnotationId = null);
       return true;

@@ -1,9 +1,38 @@
+#include <cstdio>
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <io.h>
 #include <windows.h>
 
 #include "flutter_window.h"
 #include "utils.h"
+
+namespace {
+
+// Direct GUI launches without a parent console leave stdin/stdout/stderr without
+// valid Win32 handles, causing Dart isolate writes to stderr (e.g., from PDF
+// font registration) to throw StdoutException. Bind missing handles to NUL
+// without creating a visible console window.
+void EnsureStandardHandlesIfMissing() {
+  FILE* dummy = nullptr;
+  if (_fileno(stdin) < 0 ||
+      ::GetStdHandle(STD_INPUT_HANDLE) == nullptr ||
+      ::GetStdHandle(STD_INPUT_HANDLE) == INVALID_HANDLE_VALUE) {
+    ::freopen_s(&dummy, "NUL", "r", stdin);
+  }
+  if (_fileno(stdout) < 0 ||
+      ::GetStdHandle(STD_OUTPUT_HANDLE) == nullptr ||
+      ::GetStdHandle(STD_OUTPUT_HANDLE) == INVALID_HANDLE_VALUE) {
+    ::freopen_s(&dummy, "NUL", "w", stdout);
+  }
+  if (_fileno(stderr) < 0 ||
+      ::GetStdHandle(STD_ERROR_HANDLE) == nullptr ||
+      ::GetStdHandle(STD_ERROR_HANDLE) == INVALID_HANDLE_VALUE) {
+    ::freopen_s(&dummy, "NUL", "w", stderr);
+  }
+}
+
+}  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -12,6 +41,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
     CreateAndAttachConsole();
   }
+  EnsureStandardHandlesIfMissing();
 
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.

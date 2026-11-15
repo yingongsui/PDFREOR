@@ -1,14 +1,45 @@
 part of 'pdf_tab_content.dart';
 
 extension _PdfTabContentSync on PdfTabContentState {
+  void _disposeCleanBaseTempFile() {
+    final tempFile = _cleanBaseTempFile;
+    _cleanBaseTempFile = null;
+    if (tempFile == null) return;
+    try {
+      if (tempFile.existsSync()) {
+        tempFile.deleteSync();
+      }
+    } catch (_) {
+      // Best-effort cleanup for temporary clean-base PDF file.
+    }
+  }
+
   void _rebuildDocumentRef() {
+    _disposeCleanBaseTempFile();
     if (_useInMemoryCleanBaseRef && _originalBaseBytes != null) {
-      _documentRef = pdfrx.PdfDocumentRefData(
-        _originalBaseBytes!,
-        sourceName: _pdfFile.path,
-        useProgressiveLoading: false,
-        key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
-      );
+      final bytes = _originalBaseBytes!;
+      // On Windows, pdfrx_engine 0.4.7's in-memory custom reader (>1MB) has a
+      // Win32 condition-variable race; load clean-base bytes via a temp file.
+      if (Platform.isWindows && bytes.length > 1024 * 1024) {
+        final tempFile = File(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}'
+          'pdfreor_base_${DateTime.now().microsecondsSinceEpoch}_$_reloadGeneration.pdf',
+        );
+        tempFile.writeAsBytesSync(bytes, flush: true);
+        _cleanBaseTempFile = tempFile;
+        _documentRef = pdfrx.PdfDocumentRefFile(
+          tempFile.path,
+          useProgressiveLoading: false,
+          key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration, 'temp_clean']),
+        );
+      } else {
+        _documentRef = pdfrx.PdfDocumentRefData(
+          bytes,
+          sourceName: _pdfFile.path,
+          useProgressiveLoading: false,
+          key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
+        );
+      }
     } else {
       _documentRef = pdfrx.PdfDocumentRefFile(
         _pdfFile.path,
@@ -16,6 +47,97 @@ extension _PdfTabContentSync on PdfTabContentState {
         key: pdfrx.PdfDocumentRefKey(_pdfFile.path, [_reloadGeneration]),
       );
     }
+  }
+
+  void _disposeTextSearcher() {
+    final searcher = _textSearcher;
+    _textSearcher = null;
+    if (searcher == null) return;
+    searcher.removeListener(_onTextSearcherChanged);
+    searcher.dispose();
+  }
+
+  void _ensureTextSearcher() {
+    if (_textSearcher != null || !_pdfViewerController.isReady) return;
+    final searcher = pdfrx.PdfTextSearcher(_pdfViewerController);
+    searcher.addListener(_onTextSearcherChanged);
+    _textSearcher = searcher;
+  }
+
+  void _onTextSearcherChanged() {
+    if (mounted) {
+      _refresh(() {});
+    }
+  }
+
+  void _paintSearchMatches(
+    ui.Canvas canvas,
+    Rect pageRect,
+    pdfrx.PdfPage page,
+  ) {
+    _textSearcher?.pageTextMatchPaintCallback(canvas, pageRect, page);
+  }
+
+  void _onFindQueryChanged(String query, {bool forceRestart = false}) {
+    _findQuery = query;
+    _ensureTextSearcher();
+    final searcher = _textSearcher;
+    if (searcher == null) {
+      _refresh(() {});
+      return;
+    }
+    if (forceRestart) {
+      searcher.resetTextSearch();
+    }
+    if (query.isEmpty) {
+      searcher.resetTextSearch();
+    } else {
+      searcher.startTextSearch(
+        query,
+        caseInsensitive: !_findMatchCase,
+        goToFirstMatch: true,
+        searchImmediately: forceRestart,
+      );
+    }
+    _refresh(() {});
+  }
+
+  void _toggleFindMatchCase() {
+    _findMatchCase = !_findMatchCase;
+    if (_findQuery.isNotEmpty) {
+      _onFindQueryChanged(_findQuery, forceRestart: true);
+    } else {
+      _refresh(() {});
+    }
+  }
+
+  Future<void> _findNextMatch() async {
+    _ensureTextSearcher();
+    final searcher = _textSearcher;
+    if (searcher == null || _findQuery.isEmpty) return;
+    if (searcher.matches.isEmpty) {
+      if (!searcher.isSearching) {
+        _onFindQueryChanged(_findQuery, forceRestart: true);
+      }
+      return;
+    }
+    final next = await searcher.goToNextMatch();
+    if (next == -1 && searcher.matches.isNotEmpty) {
+      await searcher.goToMatchOfIndex(0);
+    }
+    _refresh(() {});
+  }
+
+  Future<void> _findPrevMatch() async {
+    _ensureTextSearcher();
+    final searcher = _textSearcher;
+    if (searcher == null || _findQuery.isEmpty) return;
+    if (searcher.matches.isEmpty) return;
+    final prev = await searcher.goToPrevMatch();
+    if (prev == -1 && searcher.matches.isNotEmpty) {
+      await searcher.goToMatchOfIndex(searcher.matches.length - 1);
+    }
+    _refresh(() {});
   }
 
   Future<void> _beginInitialDocumentOpen() async {
@@ -416,6 +538,10 @@ extension _PdfTabContentSync on PdfTabContentState {
     }
     _lastReportedZoom = controller.currentZoom;
     _isDocumentLoaded = true;
+    _ensureTextSearcher();
+    if (_isFindBarVisible && _findQuery.isNotEmpty) {
+      _onFindQueryChanged(_findQuery, forceRestart: true);
+    }
     final actualPage = controller.pageNumber ?? targetPage;
     _refresh(() {
       _pagesCount = math.max(1, totalPages);

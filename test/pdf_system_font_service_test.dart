@@ -161,5 +161,11 @@ void main() {
       expectedWestMono: 'consola.ttf',
     );
   });
+
+  test('viewerFontManager stays null until font manager preparation succeeds', () {
+    // Accessing viewerFontManager before init() must not trigger or return an
+    // unprepared PdfFontManager that could stall PdfViewer document loading.
+    expect(PdfSystemFontService.instance.viewerFontManager, isNull);
+  });
 }
 

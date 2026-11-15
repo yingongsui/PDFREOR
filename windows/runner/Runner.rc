@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "PDFREOR" "\0"
             VALUE "FileDescription", "PDFREOR - PDF Reader and Annotation Editor" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "pdfreor" "\0"
+            VALUE "InternalName", "PDFREOR" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 PDFREOR. All rights reserved." "\0"
-            VALUE "OriginalFilename", "pdfreor.exe" "\0"
+            VALUE "OriginalFilename", "PDFREOR.exe" "\0"
             VALUE "ProductName", "PDFREOR" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

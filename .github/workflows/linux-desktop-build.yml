@@ -58,7 +58,7 @@ jobs:
           mkdir -p dist
 
           # Portable archive
-          tar -C "$BUNDLE_DIR" -czf "dist/pdfreor-ubuntu-${ARCH}.tar.gz" .
+          tar -C "$BUNDLE_DIR" -czf "dist/PDFREOR-ubuntu-${ARCH}.tar.gz" .
 
           # Ubuntu .deb package
           PKG_ROOT="dist/deb_root"
@@ -70,11 +70,11 @@ jobs:
                    "${PKG_ROOT}/usr/share/icons/hicolor/scalable/apps"
 
           cp -r "${BUNDLE_DIR}/." "${PKG_ROOT}/opt/pdfreor/"
-          chmod +x "${PKG_ROOT}/opt/pdfreor/pdfreor"
+          chmod +x "${PKG_ROOT}/opt/pdfreor/PDFREOR"
 
           cat << 'EOF' > "${PKG_ROOT}/usr/bin/pdfreor"
           #!/bin/sh
-          exec /opt/pdfreor/pdfreor "$@"
+          exec /opt/pdfreor/PDFREOR "$@"
           EOF
           chmod 755 "${PKG_ROOT}/usr/bin/pdfreor"
 
@@ -87,7 +87,7 @@ jobs:
           Type=Application
           Name=PDFREOR
           Comment=A fast, responsive PDF reader and annotation editor for desktop
-          Exec=/opt/pdfreor/pdfreor %F
+          Exec=/opt/pdfreor/PDFREOR %F
           Icon=pdfreor
           Terminal=false
           Categories=Office;Viewer;Utility;
@@ -106,14 +106,14 @@ jobs:
           Description: A fast, responsive PDF reader and annotation editor for desktop.
           EOF
 
-          dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/pdfreor-ubuntu-${ARCH}.deb"
+          dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/PDFREOR-ubuntu-${ARCH}.deb"
           rm -rf "${PKG_ROOT}"
 
       - name: Upload Ubuntu artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: pdfreor-ubuntu
+          name: PDFREOR-ubuntu
           path: |
-            dist/pdfreor-ubuntu-*.deb
-            dist/pdfreor-ubuntu-*.tar.gz
+            dist/PDFREOR-ubuntu-*.deb
+            dist/PDFREOR-ubuntu-*.tar.gz
           retention-days: 14

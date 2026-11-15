@@ -57,7 +57,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path "build\windows\x64\runner\Release\*" `
-            -DestinationPath "dist\pdfreor-windows-x64-portable.zip" `
+            -DestinationPath "dist\PDFREOR-windows-x64-portable.zip" `
             -Force
 
       - name: Package Inno Setup installer
@@ -88,7 +88,7 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: pdfreor-windows
+          name: PDFREOR-windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14

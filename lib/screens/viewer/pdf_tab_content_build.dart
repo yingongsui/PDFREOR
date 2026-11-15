@@ -128,11 +128,12 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               : pdfrx.PdfViewer(
                                   _documentRef!,
                                   controller: _pdfViewerController,
-                            fontManager: PdfSystemFontService.instance.fontManager,
+                            fontManager: PdfSystemFontService.instance.viewerFontManager,
                             initialPageNumber: _initialPageNumber,
                             params: pdfrx.PdfViewerParams(
                               margin: 0.0,
                               layoutPages: PdfTabContentState._layoutVerticalPages,
+                              pagePaintCallbacks: _pagePaintCallbacks,
                               buildContextMenu: suppressBuiltInContextMenu,
                               backgroundColor: theme.brightness == Brightness.dark
                                   ? const Color(0xFF1A1C1E)
@@ -379,6 +380,26 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   onSave: () => _saveToOriginalFile(showFeedback: true),
                   onSaveOptions: _promptSaveMethodDialog,
                 ),
+                if (_isFindBarVisible)
+                  Positioned(
+                    top: 12,
+                    right: 16,
+                    left: _canvasSize.width > 0 && _canvasSize.width < 430 ? 16 : null,
+                    child: PdfFindBar(
+                      controller: _findTextController,
+                      focusNode: _findFocusNode,
+                      matchCase: _findMatchCase,
+                      isSearching: _textSearcher?.isSearching ?? false,
+                      matchCount: _textSearcher?.matches.length ?? 0,
+                      currentMatchIndex: _textSearcher?.currentIndex,
+                      query: _findQuery,
+                      onQueryChanged: _onFindQueryChanged,
+                      onToggleMatchCase: _toggleFindMatchCase,
+                      onFindNext: () => _findNextMatch(),
+                      onFindPrevious: () => _findPrevMatch(),
+                      onClose: closeFindBar,
+                    ),
+                  ),
                 if (_isLoading)
                   Container(
                     color: _isDocumentLoaded

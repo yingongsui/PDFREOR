@@ -37,19 +37,19 @@ jobs:
         run: |
           rm -rf dist/dmg_root
           mkdir -p dist/dmg_root
-          ditto build/macos/Build/Products/Release/pdfreor.app dist/dmg_root/pdfreor.app
+          ditto build/macos/Build/Products/Release/PDFREOR.app dist/dmg_root/PDFREOR.app
           ln -s /Applications dist/dmg_root/Applications
           hdiutil create \
             -volname "PDFREOR" \
             -srcfolder dist/dmg_root \
             -ov \
             -format UDZO \
-            dist/pdfreor-macos.dmg
+            dist/PDFREOR-macos.dmg
           rm -rf dist/dmg_root
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
         with:
-          name: pdfreor-macos
-          path: dist/pdfreor-macos.dmg
+          name: PDFREOR-macos
+          path: dist/PDFREOR-macos.dmg
           retention-days: 14

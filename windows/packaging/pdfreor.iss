@@ -11,7 +11,7 @@
 #define MyAppName "PDFREOR"
 #define MyAppPublisher "PDFREOR"
 #define MyAppURL "https://github.com/yingongsui/PDFREOR"
-#define MyAppExeName "pdfreor.exe"
+#define MyAppExeName "PDFREOR.exe"
 
 [Setup]
 AppId={{8E9E4C5A-6B3F-4D72-9A1C-4E7D2B1A8F90}
@@ -29,7 +29,7 @@ ArchitecturesInstallIn64BitMode=x64
 DisableProgramGroupPage=yes
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#OutputDir}
-OutputBaseFilename=pdfreor-windows-x64-setup
+OutputBaseFilename=PDFREOR-windows-x64-setup
 SetupIconFile=..\runner\resources\app_icon.ico
 Compression=lzma2
 SolidCompression=yes
