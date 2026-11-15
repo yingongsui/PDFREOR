@@ -46,6 +46,7 @@ class PdfListTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         onLongPress: onLongPress,
+        onSecondaryTap: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(

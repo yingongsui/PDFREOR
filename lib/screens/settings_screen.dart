@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
 import '../services/pdf_scanner_service.dart';
+import '../services/platform_bridge.dart';
 import 'settings/latex_operators_section.dart';
 import 'settings/settings_widgets.dart';
 
@@ -118,20 +119,24 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'All-Files Storage Access',
-                              style: TextStyle(
+                            Text(
+                              !PlatformBridge.isMobile
+                                  ? 'Local File Access'
+                                  : 'All-Files Storage Access',
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              _isChecking
-                                  ? 'Checking permission status...'
-                                  : _hasPermission
-                                      ? 'Granted • Device storage scanning enabled'
-                                      : 'Not granted • Required to scan and read PDFs',
+                              !PlatformBridge.isMobile
+                                  ? 'Granted • Documents, Downloads, and selected folders'
+                                  : _isChecking
+                                      ? 'Checking permission status...'
+                                      : _hasPermission
+                                          ? 'Granted • Device storage scanning enabled'
+                                          : 'Not granted • Required to scan and read PDFs',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -160,26 +165,28 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (!_hasPermission)
-                        FilledButton.tonalIcon(
-                          onPressed: _requestPermission,
-                          icon: const Icon(Icons.lock_open_rounded, size: 16),
-                          label: const Text('Grant Access'),
-                        )
-                      else
-                        OutlinedButton.icon(
-                          onPressed: () => _scannerService.openSettings(),
-                          icon: const Icon(Icons.settings_rounded, size: 16),
-                          label: const Text('Manage in Settings'),
-                        ),
-                    ],
-                  ),
+                  if (PlatformBridge.isMobile) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!_hasPermission)
+                          FilledButton.tonalIcon(
+                            onPressed: _requestPermission,
+                            icon: const Icon(Icons.lock_open_rounded, size: 16),
+                            label: const Text('Grant Access'),
+                          )
+                        else
+                          OutlinedButton.icon(
+                            onPressed: () => _scannerService.openSettings(),
+                            icon: const Icon(Icons.settings_rounded, size: 16),
+                            label: const Text('Manage in Settings'),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -621,16 +628,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   }
 
   Future<void> _openGitHubUrl(BuildContext context) async {
-    try {
-      const channel = MethodChannel('com.yin.pdfreor/stylus');
-      final success = await channel.invokeMethod<bool>('openUrl', {'url': _githubUrl});
-      if (success != true && context.mounted) {
-        await _copyGitHubLink(context);
-      }
-    } catch (_) {
-      if (context.mounted) {
-        await _copyGitHubLink(context);
-      }
+    final success = await PlatformBridge.openUrl(_githubUrl);
+    if (!success && context.mounted) {
+      await _copyGitHubLink(context);
     }
   }
 }

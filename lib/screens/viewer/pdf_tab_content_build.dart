@@ -339,6 +339,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   isStylusDetected: _isStylusDetected,
                   isEraserActive: _isEraserActive,
                   stylusOnlyMode: _stylusOnlyMode,
+                  showStylusOnlyToggle: PlatformBridge.isMobile,
                   canUndo: _drawingController.canUndo,
                   initialPosition: _toolbarPosition,
                   onPositionChanged: (newPos) {

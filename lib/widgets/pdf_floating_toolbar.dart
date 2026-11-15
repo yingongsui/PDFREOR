@@ -13,6 +13,7 @@ class PdfFloatingToolbar extends StatefulWidget {
   final bool isStylusDetected;
   final bool isEraserActive;
   final bool stylusOnlyMode;
+  final bool showStylusOnlyToggle;
   final bool canUndo;
   final Offset? initialPosition;
   final ValueChanged<Offset>? onPositionChanged;
@@ -39,6 +40,7 @@ class PdfFloatingToolbar extends StatefulWidget {
     required this.isStylusDetected,
     this.isEraserActive = false,
     required this.stylusOnlyMode,
+    this.showStylusOnlyToggle = true,
     required this.canUndo,
     this.initialPosition,
     this.onPositionChanged,
@@ -313,20 +315,21 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                               const Divider(height: 14, indent: 8, endIndent: 8),
 
                               // Stylus Only Mode Toggle (Palm Rejection)
-                              IconButton(
-                                icon: Icon(
-                                  widget.stylusOnlyMode
-                                      ? Icons.do_not_touch_rounded
-                                      : Icons.touch_app_rounded,
-                                  size: 20,
-                                  color: widget.stylusOnlyMode ? Colors.purple : Colors.grey,
+                              if (widget.showStylusOnlyToggle)
+                                IconButton(
+                                  icon: Icon(
+                                    widget.stylusOnlyMode
+                                        ? Icons.do_not_touch_rounded
+                                        : Icons.touch_app_rounded,
+                                    size: 20,
+                                    color: widget.stylusOnlyMode ? Colors.purple : Colors.grey,
+                                  ),
+                                  tooltip: widget.stylusOnlyMode
+                                      ? 'Palm Rejection ON (Stylus Only)'
+                                      : 'Palm Rejection OFF (Touch + Stylus)',
+                                  onPressed: () =>
+                                      widget.onStylusOnlyModeToggled(!widget.stylusOnlyMode),
                                 ),
-                                tooltip: widget.stylusOnlyMode
-                                    ? 'Palm Rejection ON (Stylus Only)'
-                                    : 'Palm Rejection OFF (Touch + Stylus)',
-                                onPressed: () =>
-                                    widget.onStylusOnlyModeToggled(!widget.stylusOnlyMode),
-                              ),
 
                               // Undo Button
                               IconButton(
@@ -375,6 +378,9 @@ class _PdfFloatingToolbarState extends State<PdfFloatingToolbar> {
                                         }
                                       },
                                 onLongPress: _isSavingToolbar
+                                    ? null
+                                    : widget.onSaveOptions,
+                                onSecondaryTap: _isSavingToolbar
                                     ? null
                                     : widget.onSaveOptions,
                                 child: SizedBox(

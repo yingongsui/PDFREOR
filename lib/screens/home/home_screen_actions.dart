@@ -221,7 +221,7 @@ extension _HomeScreenActions on _HomeScreenState {
 
   Future<void> _openExternal(PdfFileInfo file) async {
     try {
-      final res = await OpenFilex.open(file.path);
+      final res = await PlatformBridge.openFileExternally(file.path);
       if (res.type != ResultType.done) {
         _showHomeSnackBar('Unable to open: ${res.message}');
       }

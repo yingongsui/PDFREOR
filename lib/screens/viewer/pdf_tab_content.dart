@@ -16,6 +16,7 @@ import '../../services/pdf_export_service.dart';
 import '../../services/pdf_system_font_service.dart';
 import '../../services/pdf_tab_manager.dart';
 import '../../services/pdf_thumbnail_service.dart';
+import '../../services/platform_bridge.dart';
 import '../../services/reading_progress_service.dart';
 import '../../widgets/pass_through_stack.dart';
 import '../../widgets/pdf_annotation_property_bar.dart';
@@ -128,8 +129,6 @@ class PdfTabContentState extends State<PdfTabContent> {
   double? _baseNormalizedWidth;
   double _docToCanvasScale = 1.0;
 
-  static const _stylusChannel = MethodChannel('com.yin.pdfreor/stylus');
-
   bool _isLoading = true;
   String? _errorMessage;
   Timer? _loadingWatchdogTimer;
@@ -154,6 +153,14 @@ class PdfTabContentState extends State<PdfTabContent> {
 
   Future<void> handleStylusPlatformCall(MethodCall call) =>
       _handleStylusPlatformCall(call);
+
+  Future<void> saveFromShortcut() => _saveToOriginalFile(showFeedback: true);
+
+  void undoFromShortcut() {
+    if (_drawingController.canUndo) {
+      _drawingController.undo();
+    }
+  }
 
   BuildContext? _contextMenuDialogContext;
 
@@ -281,7 +288,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     _drawingController.addListener(_onDrawingControllerChanged);
     EditorSettingsService.settingsNotifier.addListener(_onExternalSettingsChanged);
 
-    if (widget.initialStylusConnected) {
+    if (PlatformBridge.isMobile && widget.initialStylusConnected) {
       _isStylusDetected = true;
       _stylusOnlyMode = true;
       _activeTool = EditorTool.pen;

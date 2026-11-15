@@ -220,6 +220,7 @@ extension _PdfTabContentActions on PdfTabContentState {
   }
 
   void _onStylusDetected() {
+    if (!PlatformBridge.isMobile) return;
     final shouldSwitchToPen =
         !_isStylusDetected && _activeTool == EditorTool.select;
     if (!_isStylusDetected || !_stylusOnlyMode || shouldSwitchToPen) {
@@ -519,7 +520,7 @@ extension _PdfTabContentActions on PdfTabContentState {
       );
       if (savedUri == null) return;
 
-      if (!Platform.isAndroid && !Platform.isIOS) {
+      if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS) {
         await File.fromUri(savedUri).writeAsBytes(flattenedBytes, flush: true);
       }
 
@@ -542,7 +543,7 @@ extension _PdfTabContentActions on PdfTabContentState {
 
   Future<void> _openExternal() async {
     try {
-      final result = await OpenFilex.open(widget.file.path);
+      final result = await PlatformBridge.openFileExternally(widget.file.path);
       if (result.type != ResultType.done) {
         _showViewerSnackBar('Cannot open external app: ${result.message}');
       }

@@ -483,17 +483,10 @@ extension _PdfTabContentSync on PdfTabContentState {
 
     if (link.url != null) {
       final urlString = link.url.toString();
-      Future<void> copyFallback() async {
+      final success = await PlatformBridge.openUrl(urlString);
+      if (!success) {
         await Clipboard.setData(ClipboardData(text: urlString));
         _showViewerSnackBar('Link copied to clipboard');
-      }
-      try {
-        final success = await PdfTabContentState._stylusChannel.invokeMethod<bool>('openUrl', {'url': urlString});
-        if (success != true) {
-          await copyFallback();
-        }
-      } catch (_) {
-        await copyFallback();
       }
       return;
     }

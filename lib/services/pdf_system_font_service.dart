@@ -2,39 +2,170 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
+/// Platform-specific candidate font files and directories for [SystemFontResolver].
+class SystemFontProfile {
+  final List<String> searchDirectories;
+  final List<String> cjkSansFiles;
+  final List<String> cjkSerifFiles;
+  final List<String> arabicFiles;
+  final List<String> hebrewFiles;
+  final List<String> thaiFiles;
+  final List<String> symbolFiles;
+  final List<String> westernMonoFiles;
+  final String westernSerifRegular;
+  final String westernSerifBold;
+  final String westernSerifItalic;
+  final String westernSerifBoldItalic;
+  final List<String> westernSerifFallbacks;
+  final String westernSansRegular;
+  final String westernSansBold;
+  final String westernSansItalic;
+  final String westernSansBoldItalic;
+  final List<String> westernSansFallbacks;
+
+  const SystemFontProfile({
+    required this.searchDirectories,
+    required this.cjkSansFiles,
+    required this.cjkSerifFiles,
+    required this.arabicFiles,
+    required this.hebrewFiles,
+    required this.thaiFiles,
+    required this.symbolFiles,
+    required this.westernMonoFiles,
+    required this.westernSerifRegular,
+    required this.westernSerifBold,
+    required this.westernSerifItalic,
+    required this.westernSerifBoldItalic,
+    this.westernSerifFallbacks = const [],
+    required this.westernSansRegular,
+    required this.westernSansBold,
+    required this.westernSansItalic,
+    required this.westernSansBoldItalic,
+    this.westernSansFallbacks = const [],
+  });
+}
+
 /// Resolves missing PDF fonts (especially non-embedded CJK CID/legacy-encoded fonts
-/// and international scripts) to built-in Android system font files without copying
+/// and international scripts) to built-in OS system font files without copying
 /// multi-megabyte TTC/TTF collections into app storage.
-class AndroidSystemFontResolver implements PdfFontResolver {
-  AndroidSystemFontResolver({List<String>? searchDirectories})
-      : _searchDirectories = searchDirectories ?? _defaultAndroidFontDirs;
+class SystemFontResolver implements PdfFontResolver {
+  SystemFontResolver({
+    required this.profile,
+    List<String>? searchDirectories,
+  }) : _searchDirectories = searchDirectories ?? profile.searchDirectories;
 
-  static const List<String> _defaultAndroidFontDirs = [
-    '/system/fonts',
-    '/product/fonts',
-    '/system/product/fonts',
-    '/apex/com.android.i18n/etc/fonts',
-    '/vendor/fonts',
-  ];
+  final SystemFontProfile profile;
 
-  static const List<String> _cjkSansFiles = [
-    'NotoSansCJK-Regular.ttc',
-    'NotoSansCJKjp-Regular.otf',
-    'NotoSansCJKsc-Regular.otf',
-    'NotoSansCJKtc-Regular.otf',
-    'NotoSansCJKkr-Regular.otf',
-    'DroidSansFallbackFull.ttf',
-    'DroidSansFallback.ttf',
-    'SECMonoCJK.ttf',
-  ];
+  static const SystemFontProfile androidProfile = SystemFontProfile(
+    searchDirectories: [
+      '/system/fonts',
+      '/product/fonts',
+      '/system/product/fonts',
+      '/apex/com.android.i18n/etc/fonts',
+      '/vendor/fonts',
+    ],
+    cjkSansFiles: [
+      'NotoSansCJK-Regular.ttc',
+      'NotoSansCJKjp-Regular.otf',
+      'NotoSansCJKsc-Regular.otf',
+      'NotoSansCJKtc-Regular.otf',
+      'NotoSansCJKkr-Regular.otf',
+      'DroidSansFallbackFull.ttf',
+      'DroidSansFallback.ttf',
+      'SECMonoCJK.ttf',
+    ],
+    cjkSerifFiles: [
+      'NotoSerifCJK-Regular.ttc',
+      'NotoSerifCJKjp-Regular.otf',
+      'NotoSerifCJKsc-Regular.otf',
+      'NotoSerifCJKtc-Regular.otf',
+      'NotoSerifCJKkr-Regular.otf',
+    ],
+    arabicFiles: [
+      'NotoNaskhArabic-Bold.ttf',
+      'NotoNaskhArabic-Regular.ttf',
+      'NotoSansArabic-Regular.ttf',
+    ],
+    hebrewFiles: [
+      'NotoSansHebrew-Bold.ttf',
+      'NotoSansHebrew-Regular.ttf',
+    ],
+    thaiFiles: [
+      'NotoSansThai-Bold.ttf',
+      'NotoSansThai-Regular.ttf',
+    ],
+    symbolFiles: [
+      'NotoSansSymbols-Regular-Subsetted.ttf',
+      'NotoSansSymbols-Regular-Subsetted2.ttf',
+    ],
+    westernMonoFiles: [
+      'DroidSansMono.ttf',
+      'CutiveMono.ttf',
+      'Roboto-Regular.ttf',
+    ],
+    westernSerifRegular: 'NotoSerif-Regular.ttf',
+    westernSerifBold: 'NotoSerif-Bold.ttf',
+    westernSerifItalic: 'NotoSerif-Italic.ttf',
+    westernSerifBoldItalic: 'NotoSerif-BoldItalic.ttf',
+    westernSerifFallbacks: ['DroidSerif-Regular.ttf', 'Roboto-Regular.ttf'],
+    westernSansRegular: 'Roboto-Regular.ttf',
+    westernSansBold: 'Roboto-Bold.ttf',
+    westernSansItalic: 'Roboto-Italic.ttf',
+    westernSansBoldItalic: 'Roboto-BoldItalic.ttf',
+    westernSansFallbacks: ['DroidSans.ttf'],
+  );
 
-  static const List<String> _cjkSerifFiles = [
-    'NotoSerifCJK-Regular.ttc',
-    'NotoSerifCJKjp-Regular.otf',
-    'NotoSerifCJKsc-Regular.otf',
-    'NotoSerifCJKtc-Regular.otf',
-    'NotoSerifCJKkr-Regular.otf',
-  ];
+  static const SystemFontProfile macOsProfile = SystemFontProfile(
+    searchDirectories: [
+      '/System/Library/Fonts',
+      '/System/Library/Fonts/Supplemental',
+      '/Library/Fonts',
+    ],
+    cjkSansFiles: [
+      'Hiragino Sans GB.ttc',
+      'STHeiti Medium.ttc',
+      'STHeiti Light.ttc',
+      'ヒラギノ角ゴシック W3.ttc',
+      'AppleSDGothicNeo.ttc',
+      'Arial Unicode.ttf',
+    ],
+    cjkSerifFiles: [
+      'Songti.ttc',
+      'ヒラギノ明朝 ProN.ttc',
+    ],
+    arabicFiles: [
+      'GeezaPro.ttc',
+      'SFArabic.ttf',
+    ],
+    hebrewFiles: [
+      'ArialHB.ttc',
+      'SFHebrew.ttf',
+    ],
+    thaiFiles: [
+      'Thonburi.ttc',
+      'ThonburiUI.ttc',
+    ],
+    symbolFiles: [
+      'Apple Symbols.ttf',
+      'Symbol.ttf',
+    ],
+    westernMonoFiles: [
+      'Menlo.ttc',
+      'Courier.ttc',
+      'Courier New.ttf',
+      'Monaco.ttf',
+    ],
+    westernSerifRegular: 'Times New Roman.ttf',
+    westernSerifBold: 'Times New Roman Bold.ttf',
+    westernSerifItalic: 'Times New Roman Italic.ttf',
+    westernSerifBoldItalic: 'Times New Roman Bold Italic.ttf',
+    westernSerifFallbacks: ['Times.ttc', 'Georgia.ttf'],
+    westernSansRegular: 'Arial.ttf',
+    westernSansBold: 'Arial Bold.ttf',
+    westernSansItalic: 'Arial Italic.ttf',
+    westernSansBoldItalic: 'Arial Bold Italic.ttf',
+    westernSansFallbacks: ['Helvetica.ttc', 'HelveticaNeue.ttc'],
+  );
 
   static const List<String> _cjkKeywords = [
     'cjk',
@@ -176,10 +307,10 @@ class AndroidSystemFontResolver implements PdfFontResolver {
     return null;
   }
 
-  String? get primaryCjkSansPath => findExistingFontFile(_cjkSansFiles);
+  String? get primaryCjkSansPath => findExistingFontFile(profile.cjkSansFiles);
 
   String? get primaryCjkSerifPath =>
-      findExistingFontFile(_cjkSerifFiles) ?? primaryCjkSansPath;
+      findExistingFontFile(profile.cjkSerifFiles) ?? primaryCjkSansPath;
 
   static String _normalizeAsciiFace(String rawFace) {
     final plusIdx = rawFace.indexOf('+');
@@ -275,12 +406,7 @@ class AndroidSystemFontResolver implements PdfFontResolver {
     // 2. Non-CJK international charsets
     switch (query.charset) {
       case PdfFontCharset.arabic:
-        final arabicPath = findExistingFontFile(const [
-              'NotoNaskhArabic-Bold.ttf',
-              'NotoNaskhArabic-Regular.ttf',
-              'NotoSansArabic-Regular.ttf',
-            ]) ??
-            primaryCjkSansPath;
+        final arabicPath = findExistingFontFile(profile.arabicFiles) ?? primaryCjkSansPath;
         if (arabicPath != null) {
           return PdfFontResolution.localFontFile(
             fontFilePath: arabicPath,
@@ -289,11 +415,7 @@ class AndroidSystemFontResolver implements PdfFontResolver {
         }
         break;
       case PdfFontCharset.hebrew:
-        final hebrewPath = findExistingFontFile(const [
-              'NotoSansHebrew-Bold.ttf',
-              'NotoSansHebrew-Regular.ttf',
-            ]) ??
-            primaryCjkSansPath;
+        final hebrewPath = findExistingFontFile(profile.hebrewFiles) ?? primaryCjkSansPath;
         if (hebrewPath != null) {
           return PdfFontResolution.localFontFile(
             fontFilePath: hebrewPath,
@@ -302,11 +424,7 @@ class AndroidSystemFontResolver implements PdfFontResolver {
         }
         break;
       case PdfFontCharset.thai:
-        final thaiPath = findExistingFontFile(const [
-              'NotoSansThai-Bold.ttf',
-              'NotoSansThai-Regular.ttf',
-            ]) ??
-            primaryCjkSansPath;
+        final thaiPath = findExistingFontFile(profile.thaiFiles) ?? primaryCjkSansPath;
         if (thaiPath != null) {
           return PdfFontResolution.localFontFile(
             fontFilePath: thaiPath,
@@ -315,11 +433,7 @@ class AndroidSystemFontResolver implements PdfFontResolver {
         }
         break;
       case PdfFontCharset.symbol:
-        final symbolPath = findExistingFontFile(const [
-              'NotoSansSymbols-Regular-Subsetted.ttf',
-              'NotoSansSymbols-Regular-Subsetted2.ttf',
-            ]) ??
-            primaryCjkSansPath;
+        final symbolPath = findExistingFontFile(profile.symbolFiles) ?? primaryCjkSansPath;
         if (symbolPath != null) {
           return PdfFontResolution.localFontFile(
             fontFilePath: symbolPath,
@@ -333,11 +447,7 @@ class AndroidSystemFontResolver implements PdfFontResolver {
 
     // 3. Explicit Western monospace / serif / sans-serif font names
     if (_westernMonoKeywords.any(normalized.contains)) {
-      final monoPath = findExistingFontFile(const [
-        'DroidSansMono.ttf',
-        'CutiveMono.ttf',
-        'Roboto-Regular.ttf',
-      ]);
+      final monoPath = findExistingFontFile(profile.westernMonoFiles);
       if (monoPath != null) {
         return PdfFontResolution.localFontFile(
           fontFilePath: monoPath,
@@ -350,11 +460,11 @@ class AndroidSystemFontResolver implements PdfFontResolver {
       final serifPath = _selectWesternStyledFile(
         isBold: isBold,
         isItalic: isItalic,
-        regular: 'NotoSerif-Regular.ttf',
-        bold: 'NotoSerif-Bold.ttf',
-        italic: 'NotoSerif-Italic.ttf',
-        boldItalic: 'NotoSerif-BoldItalic.ttf',
-        fallbacks: const ['DroidSerif-Regular.ttf', 'Roboto-Regular.ttf'],
+        regular: profile.westernSerifRegular,
+        bold: profile.westernSerifBold,
+        italic: profile.westernSerifItalic,
+        boldItalic: profile.westernSerifBoldItalic,
+        fallbacks: profile.westernSerifFallbacks,
       );
       if (serifPath != null) {
         return PdfFontResolution.localFontFile(
@@ -368,11 +478,11 @@ class AndroidSystemFontResolver implements PdfFontResolver {
       final sansPath = _selectWesternStyledFile(
         isBold: isBold,
         isItalic: isItalic,
-        regular: 'Roboto-Regular.ttf',
-        bold: 'Roboto-Bold.ttf',
-        italic: 'Roboto-Italic.ttf',
-        boldItalic: 'Roboto-BoldItalic.ttf',
-        fallbacks: const ['DroidSans.ttf'],
+        regular: profile.westernSansRegular,
+        bold: profile.westernSansBold,
+        italic: profile.westernSansItalic,
+        boldItalic: profile.westernSansBoldItalic,
+        fallbacks: profile.westernSansFallbacks,
       );
       if (sansPath != null) {
         return PdfFontResolution.localFontFile(
@@ -383,16 +493,17 @@ class AndroidSystemFontResolver implements PdfFontResolver {
     }
 
     // 4. Universal fallback for unrecognized/generic PDF font names (e.g. CIDFont+F1,
-    // Identity-H unembedded fonts with default charset): prefer Pan-CJK Noto fonts
+    // Identity-H unembedded fonts with default charset): prefer Pan-CJK fonts
     // because they cover Latin, Cyrillic, Greek, AND full CJK glyphs simultaneously.
     final fallbackPath = (query.isRoman ? primaryCjkSerifPath : primaryCjkSansPath) ??
         _selectWesternStyledFile(
           isBold: isBold,
           isItalic: isItalic,
-          regular: 'Roboto-Regular.ttf',
-          bold: 'Roboto-Bold.ttf',
-          italic: 'Roboto-Italic.ttf',
-          boldItalic: 'Roboto-BoldItalic.ttf',
+          regular: profile.westernSansRegular,
+          bold: profile.westernSansBold,
+          italic: profile.westernSansItalic,
+          boldItalic: profile.westernSansBoldItalic,
+          fallbacks: profile.westernSansFallbacks,
         );
     if (fallbackPath != null) {
       return PdfFontResolution.localFontFile(
@@ -402,6 +513,18 @@ class AndroidSystemFontResolver implements PdfFontResolver {
     }
     return null;
   }
+}
+
+/// Android built-in system font resolver.
+class AndroidSystemFontResolver extends SystemFontResolver {
+  AndroidSystemFontResolver({super.searchDirectories})
+      : super(profile: SystemFontResolver.androidProfile);
+}
+
+/// macOS built-in system font resolver.
+class MacOsSystemFontResolver extends SystemFontResolver {
+  MacOsSystemFontResolver({super.searchDirectories})
+      : super(profile: SystemFontResolver.macOsProfile);
 }
 
 /// Manages Android system font registration for `pdfrx` so PDFs with
@@ -447,16 +570,26 @@ class PdfSystemFontService {
     'Batang',
   ];
 
-  late final AndroidSystemFontResolver _androidResolver =
-      AndroidSystemFontResolver();
+  late final SystemFontResolver? _platformResolver = _createPlatformResolver();
   PdfFontManager? _fontManager;
   Future<void>? _initFuture;
+
+  SystemFontResolver? _createPlatformResolver() {
+    if (Platform.isAndroid) {
+      return AndroidSystemFontResolver();
+    }
+    if (Platform.isMacOS) {
+      return MacOsSystemFontResolver();
+    }
+    return null;
+  }
 
   PdfFontManager get fontManager => _fontManager ??= _buildFontManager();
 
   PdfFontManager _buildFontManager() {
-    if (Platform.isAndroid) {
-      return PdfFontManager(resolvers: [_androidResolver]);
+    final resolver = _platformResolver;
+    if (resolver != null) {
+      return PdfFontManager(resolvers: [resolver]);
     }
     return PdfFontManager(resolvers: const []);
   }
@@ -466,12 +599,13 @@ class PdfSystemFontService {
   }
 
   Future<void> _initInternal() async {
-    if (!Platform.isAndroid) return;
+    final resolver = _platformResolver;
+    if (resolver == null) return;
 
     await fontManager.prepare();
 
-    final sansPath = _androidResolver.primaryCjkSansPath;
-    final serifPath = _androidResolver.primaryCjkSerifPath;
+    final sansPath = resolver.primaryCjkSansPath;
+    final serifPath = resolver.primaryCjkSerifPath;
 
     final registrations = <Future<void>>[
       if (sansPath != null)

@@ -1,9 +1,11 @@
 import 'dart:collection';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/pdf_file_info.dart';
 import '../services/pdf_tab_manager.dart';
+import '../services/platform_bridge.dart';
 import '../services/reading_progress_service.dart';
 import '../widgets/pdf_thumbnails_sidebar.dart';
 import 'viewer/pdf_tab_content.dart';
@@ -41,20 +43,24 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     }
     _syncActivePageInfo();
     PdfTabManager.instance.addListener(_onTabManagerChanged);
-    _stylusChannel.setMethodCallHandler(_handleStylusPlatformCall);
-    _stylusChannel.invokeMethod<bool>('isStylusConnected').then((connected) {
-      if (connected == true && mounted) {
-        _isStylusConnectedCache = true;
-        _activeTabState?.notifyStylusConnected();
-      }
-    }).catchError((_) {});
+    if (PlatformBridge.isMobile) {
+      _stylusChannel.setMethodCallHandler(_handleStylusPlatformCall);
+      _stylusChannel.invokeMethod<bool>('isStylusConnected').then((connected) {
+        if (connected == true && mounted) {
+          _isStylusConnectedCache = true;
+          _activeTabState?.notifyStylusConnected();
+        }
+      }).catchError((_) {});
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ReadingProgressService.instance.flush().ignore();
-    _stylusChannel.setMethodCallHandler(null);
+    if (PlatformBridge.isMobile) {
+      _stylusChannel.setMethodCallHandler(null);
+    }
     PdfTabManager.instance.removeListener(_onTabManagerChanged);
     _pageInfoNotifier.dispose();
     super.dispose();
@@ -216,6 +222,41 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     }
   }
 
+  KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
+    if (!PlatformBridge.isDesktop || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final hw = HardwareKeyboard.instance;
+    final hasPrimaryModifier = Platform.isMacOS
+        ? (hw.isMetaPressed && !hw.isControlPressed && !hw.isAltPressed)
+        : (hw.isControlPressed && !hw.isMetaPressed && !hw.isAltPressed);
+    if (!hasPrimaryModifier || hw.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.keyS) {
+      _activeTabState?.saveFromShortcut();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyW) {
+      final activeIdx = PdfTabManager.instance.activeIndex;
+      if (activeIdx >= 0) {
+        _closeTab(activeIdx);
+        return KeyEventResult.handled;
+      }
+    }
+    if (key == LogicalKeyboardKey.keyZ) {
+      final focusWidget = FocusManager.instance.primaryFocus?.context?.widget;
+      if (focusWidget is EditableText) {
+        return KeyEventResult.ignored;
+      }
+      _activeTabState?.undoFromShortcut();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = PdfTabManager.instance.openTabs;
@@ -255,13 +296,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
 
     final theme = Theme.of(context);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        await _handleBack();
-      },
-      child: Scaffold(
+    return Focus(
+      autofocus: PlatformBridge.isDesktop,
+      onKeyEvent: _handleDesktopKeyEvent,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          await _handleBack();
+        },
+        child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -447,6 +491,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                     )
                   : const SizedBox.shrink(),
           ],
+        ),
         ),
       ),
     );

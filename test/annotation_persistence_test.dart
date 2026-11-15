@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfreor/controllers/drawing_controller.dart';
@@ -408,6 +409,51 @@ void main() {
     await tester.tap(saveIcon);
     await tester.pump(const Duration(seconds: 2));
     expect(saveCount, 1);
+  });
+
+  testWidgets('PdfFloatingToolbar hides stylus toggle when disabled and supports secondary tap', (tester) async {
+    int saveOptionsCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              PdfFloatingToolbar(
+                activeTool: EditorTool.select,
+                activeShape: ShapeType.rectangle,
+                activeColor: Colors.black,
+                activeStrokeWidth: 3.0,
+                isStylusDetected: false,
+                stylusOnlyMode: false,
+                showStylusOnlyToggle: false,
+                canUndo: false,
+                onToolSelected: (_) {},
+                onShapeSelected: (_) {},
+                onColorSelected: (_) {},
+                onStrokeWidthSelected: (_) {},
+                onStylusOnlyModeToggled: (_) {},
+                onUndo: () {},
+                onManagePages: () {},
+                onSave: () {},
+                onSaveOptions: () => saveOptionsCount++,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.touch_app_rounded), findsNothing);
+    expect(find.byIcon(Icons.do_not_touch_rounded), findsNothing);
+
+    final saveIcon = find.byIcon(Icons.save_rounded);
+    await tester.ensureVisible(saveIcon);
+    await tester.pumpAndSettle();
+
+    await tester.tap(saveIcon, buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(saveOptionsCount, 1);
   });
 
   test('Repeated move + reopen + save cycles keep PDF size and resource counts constant', () async {

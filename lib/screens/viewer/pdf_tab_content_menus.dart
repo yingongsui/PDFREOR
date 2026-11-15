@@ -96,9 +96,9 @@ extension _PdfTabContentMenus on PdfTabContentState {
   }
 
   Future<void> _handlePaste(Offset docPos) async {
-    try {
-      final imageBytes = await PdfTabContentState._stylusChannel.invokeMethod<Uint8List>('getClipboardImage');
-      if (imageBytes != null && imageBytes.isNotEmpty) {
+    final imageBytes = await PlatformBridge.getClipboardImage();
+    if (imageBytes != null) {
+      try {
         final codec = await ui.instantiateImageCodec(imageBytes);
         final frame = await codec.getNextFrame();
         final img = frame.image;
@@ -120,8 +120,8 @@ extension _PdfTabContentMenus on PdfTabContentState {
         _drawingController.addImage(newImg);
         _showViewerSnackBar('Image pasted from clipboard!');
         return;
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     try {
       final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
