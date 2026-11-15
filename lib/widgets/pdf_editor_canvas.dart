@@ -31,6 +31,8 @@ class PdfEditorCanvas extends StatefulWidget {
   final ValueChanged<String?>? onSelectedShapeChanged;
   final String? selectedStrokeId;
   final ValueChanged<String?>? onSelectedStrokeChanged;
+  final String? selectedImageId;
+  final ValueChanged<String?>? onSelectedImageChanged;
   final String? selectedTextAnnotationId;
   final ValueChanged<String?>? onSelectedTextAnnotationChanged;
   final ValueChanged<bool>? onPointerEraserStateChanged;
@@ -64,6 +66,8 @@ class PdfEditorCanvas extends StatefulWidget {
     this.onSelectedShapeChanged,
     this.selectedStrokeId,
     this.onSelectedStrokeChanged,
+    this.selectedImageId,
+    this.onSelectedImageChanged,
     this.selectedTextAnnotationId,
     this.onSelectedTextAnnotationChanged,
     this.onPointerEraserStateChanged,
@@ -107,6 +111,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   String? get _selectedShapeId => widget.selectedShapeId;
   String? get _selectedStrokeId => widget.selectedStrokeId;
+  String? get _selectedImageId => widget.selectedImageId;
   String? get _selectedTextAnnotationId => widget.selectedTextAnnotationId;
 
   void _setSelectedShape(String? id) {
@@ -115,6 +120,10 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
 
   void _setSelectedStroke(String? id) {
     widget.onSelectedStrokeChanged?.call(id);
+  }
+
+  void _setSelectedImage(String? id) {
+    widget.onSelectedImageChanged?.call(id);
   }
 
   void _setSelectedTextAnnotation(String? id) {
@@ -161,6 +170,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         docPos,
         selectedShapeId: _selectedShapeId,
         selectedStrokeId: _selectedStrokeId,
+        selectedImageId: _selectedImageId,
       )) {
         return;
       }
@@ -169,6 +179,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       if (hitShape != null) {
         _setSelectedShape(hitShape.id);
         _setSelectedStroke(null);
+        _setSelectedImage(null);
         _setSelectedTextAnnotation(null);
         return;
       }
@@ -177,6 +188,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       if (hitStroke != null) {
         _setSelectedStroke(hitStroke.id);
         _setSelectedShape(null);
+        _setSelectedImage(null);
         _setSelectedTextAnnotation(null);
         return;
       }
@@ -186,6 +198,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         _setSelectedTextAnnotation(hitTa.id);
         _setSelectedShape(null);
         _setSelectedStroke(null);
+        _setSelectedImage(null);
         return;
       }
 
@@ -194,6 +207,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
       }
       if (_selectedStrokeId != null) {
         _setSelectedStroke(null);
+      }
+      if (_selectedImageId != null) {
+        _setSelectedImage(null);
       }
       if (_selectedTextAnnotationId != null) {
         _setSelectedTextAnnotation(null);
@@ -205,6 +221,9 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
         }
         if (_selectedStrokeId != null) {
           _setSelectedStroke(null);
+        }
+        if (_selectedImageId != null) {
+          _setSelectedImage(null);
         }
         if (_selectedTextAnnotationId != null) {
           _setSelectedTextAnnotation(null);
@@ -333,7 +352,20 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                     child: ImageCanvasItem(
                       key: ValueKey('img_${img.id}'),
                       image: img,
+                      isSelected: widget.onSelectedImageChanged != null
+                          ? _selectedImageId == img.id
+                          : null,
                       transformationController: widget.transformationController,
+                      onSelect: widget.onSelectedImageChanged != null
+                          ? () => _setSelectedImage(img.id)
+                          : null,
+                      onDeselect: widget.onSelectedImageChanged != null
+                          ? () {
+                              if (_selectedImageId == img.id) {
+                                _setSelectedImage(null);
+                              }
+                            }
+                          : null,
                       onUpdate: (newPos, newW, newH) {
                         img.position = newPos;
                         img.width = newW;
@@ -343,7 +375,12 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                       onModificationCommitted: (oldPos, oldW, oldH) {
                         widget.controller.recordImageModification(img, oldPos, oldW, oldH);
                       },
-                      onDelete: () => widget.controller.deleteImage(img.id),
+                      onDelete: () {
+                        if (_selectedImageId == img.id) {
+                          _setSelectedImage(null);
+                        }
+                        widget.controller.deleteImage(img.id);
+                      },
                     ),
                   ),
                 for (final tb in widget.controller.textBoxes)
@@ -487,6 +524,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
               onShapeCompleted: widget.onShapeCompleted,
               selectedShapeId: _selectedShapeId,
               selectedStrokeId: _selectedStrokeId,
+              selectedImageId: _selectedImageId,
             ),
             (instance) {
               instance.update(
@@ -508,6 +546,7 @@ class _PdfEditorCanvasState extends State<PdfEditorCanvas> {
                 onShapeCompleted: widget.onShapeCompleted,
                 selectedShapeId: _selectedShapeId,
                 selectedStrokeId: _selectedStrokeId,
+                selectedImageId: _selectedImageId,
               );
             },
           ),

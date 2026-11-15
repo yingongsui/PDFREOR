@@ -227,6 +227,23 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
       return KeyEventResult.ignored;
     }
     final hw = HardwareKeyboard.instance;
+    final key = event.logicalKey;
+
+    if (!hw.isMetaPressed &&
+        !hw.isControlPressed &&
+        !hw.isAltPressed &&
+        !hw.isShiftPressed &&
+        (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace)) {
+      final focusWidget = FocusManager.instance.primaryFocus?.context?.widget;
+      if (focusWidget is EditableText) {
+        return KeyEventResult.ignored;
+      }
+      if (_activeTabState?.deleteSelectedAnnotationFromShortcut() == true) {
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     final hasPrimaryModifier = Platform.isMacOS
         ? (hw.isMetaPressed && !hw.isControlPressed && !hw.isAltPressed)
         : (hw.isControlPressed && !hw.isMetaPressed && !hw.isAltPressed);
@@ -234,7 +251,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
       return KeyEventResult.ignored;
     }
 
-    final key = event.logicalKey;
     if (key == LogicalKeyboardKey.keyS) {
       _activeTabState?.saveFromShortcut();
       return KeyEventResult.handled;

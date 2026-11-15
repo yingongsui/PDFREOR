@@ -64,6 +64,7 @@ class CanvasDragHandle extends StatelessWidget {
   final double touchSize;
   final double visualSize;
   final double borderWidth;
+  final Object? tapRegionGroupId;
   final void Function(DragStartDetails details)? onPanStart;
   final void Function(DragUpdateDetails details) onPanUpdate;
   final VoidCallback? onPanEnd;
@@ -74,6 +75,7 @@ class CanvasDragHandle extends StatelessWidget {
     required this.touchSize,
     required this.visualSize,
     required this.borderWidth,
+    this.tapRegionGroupId,
     this.onPanStart,
     required this.onPanUpdate,
     this.onPanEnd,
@@ -81,41 +83,50 @@ class CanvasDragHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: position.dx - touchSize / 2,
-      top: position.dy - touchSize / 2,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanStart: onPanStart,
-        onPanUpdate: onPanUpdate,
-        onPanEnd: (_) => onPanEnd?.call(),
-        onPanCancel: () => onPanEnd?.call(),
+    Widget gesture = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: onPanStart,
+      onPanUpdate: onPanUpdate,
+      onPanEnd: (_) => onPanEnd?.call(),
+      onPanCancel: () => onPanEnd?.call(),
+      child: Container(
+        width: touchSize,
+        height: touchSize,
+        alignment: Alignment.center,
+        color: Colors.transparent,
         child: Container(
-          width: touchSize,
-          height: touchSize,
-          alignment: Alignment.center,
-          color: Colors.transparent,
-          child: Container(
-            width: visualSize,
-            height: visualSize,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF1976D2),
-                width: math.max(1.5, borderWidth),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 3.0,
-                  offset: Offset(0, 1),
-                ),
-              ],
+          width: visualSize,
+          height: visualSize,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0xFF1976D2),
+              width: math.max(1.5, borderWidth),
             ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 3.0,
+                offset: Offset(0, 1),
+              ),
+            ],
           ),
         ),
       ),
+    );
+
+    if (tapRegionGroupId != null) {
+      gesture = TapRegion(
+        groupId: tapRegionGroupId,
+        child: gesture,
+      );
+    }
+
+    return Positioned(
+      left: position.dx - touchSize / 2,
+      top: position.dy - touchSize / 2,
+      child: gesture,
     );
   }
 }

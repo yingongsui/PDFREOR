@@ -198,6 +198,34 @@ class PdfTabContentState extends State<PdfTabContent> {
     return copied;
   }
 
+  bool deleteSelectedAnnotationFromShortcut() {
+    if (_selectedImageId != null) {
+      final id = _selectedImageId!;
+      _selectedImageId = null;
+      _drawingController.deleteImage(id);
+      return true;
+    }
+    if (_selectedShapeId != null) {
+      final id = _selectedShapeId!;
+      _selectedShapeId = null;
+      _drawingController.deleteDrawnShape(id);
+      return true;
+    }
+    if (_selectedStrokeId != null) {
+      final id = _selectedStrokeId!;
+      _selectedStrokeId = null;
+      _drawingController.deleteStroke(id);
+      return true;
+    }
+    if (_selectedTextAnnotationId != null) {
+      final id = _selectedTextAnnotationId!;
+      _selectedTextAnnotationId = null;
+      _drawingController.deleteTextAnnotation(id);
+      return true;
+    }
+    return false;
+  }
+
   BuildContext? _contextMenuDialogContext;
 
   // Editor states
@@ -211,6 +239,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   String? _selectedTextAnnotationId;
   String? _selectedShapeId;
   String? _selectedStrokeId;
+  String? _selectedImageId;
   final List<Rect> _pageDocBounds = [];
   List<Size> _pdfPageSizes = const [];
   final ValueNotifier<Rect?> _textSelectionLocalRectNotifier = ValueNotifier<Rect?>(null);
@@ -458,6 +487,10 @@ class PdfTabContentState extends State<PdfTabContent> {
     }
     if (_selectedStrokeId != null) {
       setState(() => _selectedStrokeId = null);
+      return true;
+    }
+    if (_selectedImageId != null) {
+      setState(() => _selectedImageId = null);
       return true;
     }
     if (_editingTextBoxId != null) {

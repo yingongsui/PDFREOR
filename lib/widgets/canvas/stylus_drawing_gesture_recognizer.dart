@@ -24,11 +24,21 @@ Rect paddedStrokeBounds(DrawingStroke stroke) {
   return stroke.getBounds().inflate(padding);
 }
 
+Rect paddedImageBounds(DrawnImage image, [double padding = 88.0]) {
+  return Rect.fromLTWH(
+    image.position.dx,
+    image.position.dy,
+    image.width,
+    image.height,
+  ).inflate(padding);
+}
+
 bool isPointWithinSelectedBounds(
   DrawingController controller,
   Offset docPos, {
   String? selectedShapeId,
   String? selectedStrokeId,
+  String? selectedImageId,
 }) {
   final selectedShape = controller.findShapeById(selectedShapeId);
   if (selectedShape != null && paddedShapeBounds(selectedShape).contains(docPos)) {
@@ -36,6 +46,10 @@ bool isPointWithinSelectedBounds(
   }
   final selectedStroke = controller.findStrokeById(selectedStrokeId);
   if (selectedStroke != null && paddedStrokeBounds(selectedStroke).contains(docPos)) {
+    return true;
+  }
+  final selectedImage = controller.findImageById(selectedImageId);
+  if (selectedImage != null && paddedImageBounds(selectedImage).contains(docPos)) {
     return true;
   }
   return false;
@@ -60,6 +74,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
   VoidCallback? onShapeCompleted;
   String? selectedShapeId;
   String? selectedStrokeId;
+  String? selectedImageId;
 
   int? _activePointerId;
 
@@ -82,6 +97,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.onShapeCompleted,
     this.selectedShapeId,
     this.selectedStrokeId,
+    this.selectedImageId,
   });
 
   void update({
@@ -103,6 +119,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     VoidCallback? onShapeCompleted,
     String? selectedShapeId,
     String? selectedStrokeId,
+    String? selectedImageId,
   }) {
     this.stylusOnly = stylusOnly;
     this.isDrawingMode = isDrawingMode;
@@ -122,6 +139,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
     this.onShapeCompleted = onShapeCompleted;
     this.selectedShapeId = selectedShapeId;
     this.selectedStrokeId = selectedStrokeId;
+    this.selectedImageId = selectedImageId;
   }
 
   bool _isEraserActive(PointerEvent event) {
@@ -165,6 +183,7 @@ class StylusDrawingGestureRecognizer extends OneSequenceGestureRecognizer {
           docPos,
           selectedShapeId: selectedShapeId,
           selectedStrokeId: selectedStrokeId,
+          selectedImageId: selectedImageId,
         )) {
       return;
     }

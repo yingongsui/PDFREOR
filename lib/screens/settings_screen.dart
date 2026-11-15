@@ -536,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'A fast, responsive PDF reader and annotation editor tailored for Android tablets and active styluses.',
+                    'A fast, responsive PDF reader and annotation editor.',
                     style: TextStyle(
                       fontSize: 13.5,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -603,6 +603,40 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   const SettingsFeatureRow(icon: Icons.draw_rounded, text: 'Stylus palm rejection & hardware button eraser'),
                   const SettingsFeatureRow(icon: Icons.category_rounded, text: 'Vector shapes, text boxes & ink drawing'),
                   const SettingsFeatureRow(icon: Icons.folder_rounded, text: 'Folder grouping & library organization'),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.desktop_mac_rounded,
+                        size: 16,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Desktop',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const SettingsFeatureRow(
+                    icon: Icons.mouse_rounded,
+                    text: 'Mouse text selection, right-click context menus & Cmd + Scroll zoom',
+                  ),
+                  const SettingsFeatureRow(
+                    icon: Icons.keyboard_rounded,
+                    text: 'Keyboard shortcuts (Save, Close Tab, Undo, Copy & Delete selected)',
+                  ),
+                  const SettingsFeatureRow(
+                    icon: Icons.content_paste_rounded,
+                    text: 'Clipboard image & text paste with resize and quick delete',
+                  ),
                 ],
               ),
             ),

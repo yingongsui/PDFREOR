@@ -110,7 +110,7 @@ extension _PdfTabContentMenus on PdfTabContentState {
         final defaultHeight = defaultWidth / aspect;
 
         final newImg = DrawnImage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: nextAnnotationId(),
           imageBytes: imageBytes,
           position: docPos,
           width: defaultWidth,
@@ -118,6 +118,14 @@ extension _PdfTabContentMenus on PdfTabContentState {
           pageNumber: _currentPage,
         );
         _drawingController.addImage(newImg);
+        _refresh(() {
+          _selectedImageId = newImg.id;
+          _selectedShapeId = null;
+          _selectedStrokeId = null;
+          _selectedTextAnnotationId = null;
+          _editingTextBoxId = null;
+          _activeTool = EditorTool.select;
+        });
         _showViewerSnackBar('Image pasted from clipboard!');
         return;
       } catch (_) {}
