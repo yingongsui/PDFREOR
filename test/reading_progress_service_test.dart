@@ -136,6 +136,49 @@ void main() {
       );
       expect(hiddenMetrics, isNull);
     });
+
+    test('computeWheelZoomTarget scales smoothly and respects min/max bounds', () {
+      // Scroll up (negative dy) zooms in by 1.2x per 120px notch
+      final zoomedIn = PdfTabContentState.computeWheelZoomTarget(
+        currentZoom: 1.0,
+        scrollDelta: const Offset(0, -120),
+      );
+      expect(zoomedIn, closeTo(1.2, 1e-6));
+
+      // Scroll down (positive dy) zooms out
+      final zoomedOut = PdfTabContentState.computeWheelZoomTarget(
+        currentZoom: 1.2,
+        scrollDelta: const Offset(0, 120),
+      );
+      expect(zoomedOut, closeTo(1.0, 1e-6));
+
+      // Clamps cleanly at minScale / maxScale and returns null when already at bound
+      expect(
+        PdfTabContentState.computeWheelZoomTarget(
+          currentZoom: 0.2,
+          scrollDelta: const Offset(0, 120),
+          minScale: 0.2,
+          maxScale: 8.0,
+        ),
+        isNull,
+      );
+      expect(
+        PdfTabContentState.computeWheelZoomTarget(
+          currentZoom: 7.5,
+          scrollDelta: const Offset(0, -120),
+          minScale: 0.2,
+          maxScale: 8.0,
+        ),
+        closeTo(8.0, 1e-6),
+      );
+      expect(
+        PdfTabContentState.computeWheelZoomTarget(
+          currentZoom: 1.0,
+          scrollDelta: Offset.zero,
+        ),
+        isNull,
+      );
+    });
   });
 }
 

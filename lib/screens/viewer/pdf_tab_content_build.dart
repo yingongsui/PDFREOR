@@ -68,6 +68,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
         : Listener(
             behavior: HitTestBehavior.translucent,
             onPointerHover: (event) {
+              _syncMetaZoomModifierState();
               if (isStylusPointer(event)) {
                 _onStylusDetected();
               }
@@ -93,7 +94,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                     }
                     return Listener(
                       behavior: HitTestBehavior.translucent,
+                      onPointerSignal: _handleDesktopPointerSignal,
                       onPointerDown: (event) {
+                        _syncMetaZoomModifierState();
                         final nearHorizontalEdge = event.localPosition.dx >= newSize.width - 42.0 ||
                             event.localPosition.dx <= 28.0;
                         if (!isStylusPointer(event) && nearHorizontalEdge) {
@@ -157,8 +160,9 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               maxImageBytesCachedOnMemory: 96 * 1024 * 1024,
                               verticalCacheExtent: 1.2,
                               horizontalCacheExtent: 0.5,
+                              scrollByMouseWheel: _isMetaZoomModifierPressed ? null : 0.2,
                               panEnabled: _shouldAllowViewerPan,
-                              scaleEnabled: _oneShotShape == null,
+                              scaleEnabled: _oneShotShape == null && !_isMetaZoomModifierPressed,
                               textSelectionParams: pdfrx.PdfTextSelectionParams(
                                 enabled: _shouldEnableTextSelection,
                                 enableSelectionHandles: PlatformBridge.isMobile ? true : null,

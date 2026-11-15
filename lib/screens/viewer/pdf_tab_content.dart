@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
@@ -111,6 +112,26 @@ class PdfTabContentState extends State<PdfTabContent> {
   }
 
 
+  @visibleForTesting
+  static double? computeWheelZoomTarget({
+    required double currentZoom,
+    required Offset scrollDelta,
+    double minScale = 0.2,
+    double maxScale = 8.0,
+  }) {
+    final delta = scrollDelta.dx + scrollDelta.dy;
+    if (delta == 0) {
+      return null;
+    }
+    final zoomFactor = -delta / 120.0;
+    final scaleFactor = math.pow(1.2, zoomFactor).toDouble();
+    final newZoom = (currentZoom * scaleFactor).clamp(minScale, maxScale);
+    if ((newZoom - currentZoom).abs() < 0.0001) {
+      return null;
+    }
+    return newZoom;
+  }
+
   late final pdfrx.PdfViewerController _pdfViewerController;
   late final TransformationController _transformationController;
   final GlobalKey<PdfFastScrollbarState> _fastScrollbarKey = GlobalKey<PdfFastScrollbarState>();
@@ -200,6 +221,49 @@ class PdfTabContentState extends State<PdfTabContent> {
   int _selectionSyncSerial = 0;
   double _lastReportedZoom = -1.0;
   Timer? _zoomSaveDebounceTimer;
+  bool _isMetaZoomModifierPressed = false;
+
+  void _syncMetaZoomModifierState() {
+    if (!PlatformBridge.isDesktop || !mounted) return;
+    final pressed = HardwareKeyboard.instance.isMetaPressed;
+    if (_isMetaZoomModifierPressed != pressed) {
+      setState(() {
+        _isMetaZoomModifierPressed = pressed;
+      });
+    }
+  }
+
+  bool _handleGlobalModifierKeyEvent(KeyEvent event) {
+    _syncMetaZoomModifierState();
+    return false;
+  }
+
+  void _handleDesktopPointerSignal(PointerSignalEvent event) {
+    if (!PlatformBridge.isDesktop || event is! PointerScrollEvent) {
+      return;
+    }
+    _syncMetaZoomModifierState();
+    if (!_pdfViewerController.isReady ||
+        _oneShotShape != null ||
+        !HardwareKeyboard.instance.isMetaPressed) {
+      return;
+    }
+    final newZoom = computeWheelZoomTarget(
+      currentZoom: _pdfViewerController.currentZoom,
+      scrollDelta: event.scrollDelta,
+      minScale: _pdfViewerController.minScale,
+      maxScale: _pdfViewerController.maxScale,
+    );
+    if (newZoom == null) {
+      return;
+    }
+    final localPos = _pdfViewerController.globalToLocal(event.position) ?? event.localPosition;
+    _pdfViewerController.zoomOnLocalPosition(
+      localPosition: localPos,
+      newZoom: newZoom,
+      duration: Duration.zero,
+    );
+  }
 
   bool get _isEraserActive => _isHardwareButtonPressed || _isPointerButtonPressed;
 
@@ -302,6 +366,10 @@ class PdfTabContentState extends State<PdfTabContent> {
     _drawingController = DrawingController();
     _drawingController.addListener(_onDrawingControllerChanged);
     EditorSettingsService.settingsNotifier.addListener(_onExternalSettingsChanged);
+    if (PlatformBridge.isDesktop) {
+      _isMetaZoomModifierPressed = HardwareKeyboard.instance.isMetaPressed;
+      HardwareKeyboard.instance.addHandler(_handleGlobalModifierKeyEvent);
+    }
 
     if (PlatformBridge.isMobile && widget.initialStylusConnected) {
       _isStylusDetected = true;
@@ -352,6 +420,9 @@ class PdfTabContentState extends State<PdfTabContent> {
     ReadingProgressService.instance.flush().ignore();
     _originalBaseBytes = null;
     _loadingWatchdogTimer?.cancel();
+    if (PlatformBridge.isDesktop) {
+      HardwareKeyboard.instance.removeHandler(_handleGlobalModifierKeyEvent);
+    }
     EditorSettingsService.settingsNotifier.removeListener(_onExternalSettingsChanged);
     _pdfViewerController.removeListener(_onPdfMatrixChanged);
     _textSelectionLocalRectNotifier.dispose();
