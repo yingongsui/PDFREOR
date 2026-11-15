@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
 import '../services/pdf_scanner_service.dart';
+import 'settings/hidden_folders_section.dart';
 import 'settings/latex_operators_section.dart';
 import 'settings/settings_widgets.dart';
 
@@ -17,12 +18,14 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   bool _hasPermission = false;
   bool _isChecking = true;
   EditorSettings _editorSettings = const EditorSettings();
+  List<String> _hiddenFolders = [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkPermission();
+    _loadHiddenFolders();
     EditorSettingsService.loadSettings().then((s) {
       if (mounted) setState(() => _editorSettings = s);
     });
@@ -68,6 +71,69 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       setState(() => _editorSettings = updated);
     }
     await EditorSettingsService.saveSettings(updated);
+  }
+
+  Future<void> _loadHiddenFolders() async {
+    final hidden = await _scannerService.getHiddenFolders();
+    final sorted = hidden.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    if (mounted) {
+      setState(() => _hiddenFolders = sorted);
+    }
+  }
+
+  Future<void> _addHiddenFolder() async {
+    final picked = await _scannerService.pickDirectory();
+    if (picked == null) return;
+    final added = await _scannerService.addHiddenFolder(picked);
+    if (!mounted) return;
+    if (added) {
+      await _loadHiddenFolders();
+    } else {
+      final normalized = PdfScannerService.normalizeFolderPath(picked);
+      final isRoot = normalized.isEmpty || normalized == '/';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRoot
+                ? 'Cannot hide root directory'
+                : 'Folder is already hidden',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeHiddenFolder(String folderPath) async {
+    await _scannerService.removeHiddenFolder(folderPath);
+    await _loadHiddenFolders();
+  }
+
+  Future<void> _clearHiddenFolders() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unhide All Folders?'),
+        content: const Text(
+          'All hidden folders will appear in the library again on the next scan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Unhide All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _scannerService.clearHiddenFolders();
+      await _loadHiddenFolders();
+    }
   }
 
   @override
@@ -391,6 +457,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           // Section: Storage & Cache
           const SettingsSectionHeader(title: 'Storage & Maintenance', icon: Icons.storage_rounded),
           const SizedBox(height: 8),
+          HiddenFoldersCard(
+            hiddenFolders: _hiddenFolders,
+            onAddFolder: _addHiddenFolder,
+            onRemoveFolder: _removeHiddenFolder,
+            onClearAll: _clearHiddenFolders,
+          ),
+          const SizedBox(height: 12),
           SettingsCard(
             child: ListTile(
               leading: const SettingsIconBadge(icon: Icons.cleaning_services_rounded),
@@ -448,7 +521,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Version 3.1.0',
+                            'Version 3.2.0',
                             style: TextStyle(
                               fontSize: 13,
                               color: theme.colorScheme.onSurfaceVariant,

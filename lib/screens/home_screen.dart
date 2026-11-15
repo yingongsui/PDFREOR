@@ -48,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   FolderSortType _folderSortType = FolderSortType.nameAsc;
 
   final Set<String> _collapsedFolders = {};
+  final Set<String> _hiddenFolders = {};
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
@@ -107,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadPreferences() async {
     try {
       final collapsed = await _scannerService.getCollapsedFolders();
+      final hidden = await _scannerService.getHiddenFolders();
       final folderSortStr = await _scannerService.getFolderSort();
       final fileSortStr = await _scannerService.getFileSort();
 
@@ -117,6 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _collapsedFolders.clear();
           _collapsedFolders.addAll(collapsed);
+          _hiddenFolders.clear();
+          _hiddenFolders.addAll(hidden);
           _folderSortType = fSort;
           _sortType = sSort;
           _applyFilterAndSort();

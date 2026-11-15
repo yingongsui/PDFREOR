@@ -174,6 +174,7 @@ extension _HomeScreenViews on _HomeScreenState {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () => _toggleFolderCollapse(folderPath),
+          onLongPress: () => _showFolderContextMenu(folderPath, files),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -294,6 +295,9 @@ extension _HomeScreenViews on _HomeScreenState {
     }
 
     if (_filteredFiles.isEmpty) {
+      final hasHiddenFilesOnly = _allFiles.isNotEmpty &&
+          _searchController.text.trim().isEmpty &&
+          _hiddenFolders.isNotEmpty;
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -305,20 +309,28 @@ extension _HomeScreenViews on _HomeScreenState {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.picture_as_pdf_outlined,
+                  hasHiddenFilesOnly
+                      ? Icons.folder_off_outlined
+                      : Icons.picture_as_pdf_outlined,
                   size: 72,
                   color: theme.colorScheme.outline.withValues(alpha: 0.5),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  _allFiles.isEmpty ? 'No PDF Files Found' : 'No Matching PDFs Found',
+                  hasHiddenFilesOnly
+                      ? 'All Scanned PDFs Are Hidden'
+                      : _allFiles.isEmpty
+                          ? 'No PDF Files Found'
+                          : 'No Matching PDFs Found',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _allFiles.isEmpty
-                      ? 'Pull down to refresh and rescan, or use the buttons below to import PDF files.'
-                      : 'Please try searching with different keywords.',
+                  hasHiddenFilesOnly
+                      ? 'Manage hidden folders in Settings, or pull down to refresh.'
+                      : _allFiles.isEmpty
+                          ? 'Pull down to refresh and rescan, or use the buttons below to import PDF files.'
+                          : 'Please try searching with different keywords.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
                 ),

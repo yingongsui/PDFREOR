@@ -6,12 +6,12 @@
 
 <p align="center">
   <b>An AI-built, fast, stylus-ready PDF reader and annotation editor for Android tablets.</b><br />
-  <sub>Version 3.1.0 · Crafted with AI</sub>
+  <sub>Version 3.2.0 · Crafted with AI</sub>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Built%20with-AI-8E24AA?style=flat-square" alt="Built with AI" />
-  <img src="https://img.shields.io/badge/Version-3.1.0-1E88E5?style=flat-square" alt="Version 3.1.0" />
+  <img src="https://img.shields.io/badge/Version-3.2.0-1E88E5?style=flat-square" alt="Version 3.2.0" />
   <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Tablet-blue?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter" alt="Flutter" />
   <img src="https://img.shields.io/badge/Dart-%5E3.12.2-0175C2?style=flat-square&logo=dart" alt="Dart" />
@@ -32,7 +32,7 @@
 
 ### Overview
 
-**PDFREOR** (`v3.1.0`) is an **AI-crafted** PDF reader and annotation editor tailored for Android tablets, built with Flutter, `pdfrx`, and `syncfusion_flutter_pdf`. From its dual-input stylus canvas and compact LaTeX rasterizer to its zero-bloat **Advanced** editable persistence engine and test suite, the application was designed, implemented, and refined through AI-assisted software engineering.
+**PDFREOR** (`v3.2.0`) is an **AI-crafted** PDF reader and annotation editor tailored for Android tablets, built with Flutter, `pdfrx`, and `syncfusion_flutter_pdf`. From its dual-input stylus canvas and compact LaTeX rasterizer to its zero-bloat **Advanced** editable persistence engine and test suite, the application was designed, implemented, and refined through AI-assisted software engineering.
 
 ### Key Features
 
@@ -109,7 +109,7 @@ flutter build apk --release
 
 ### 概要
 
-**PDFREOR**（`v3.1.0`）は、**AI を活用して設計・実装・最適化された** Android タブレット向け PDF リーダー兼スタイラス注釈エディターです。Flutter、`pdfrx`、`syncfusion_flutter_pdf` を基盤とし、マルチタブ閲覧、パームリジェクション対応の手書き入力、図形・テキストボックス・LaTeX 数式ボックス、ページ編集、さらに再編集可能な **Advanced** 保存と標準 PDF として統合する **Standard** 保存まで、一連のアーキテクチャと検証テストを含めて AI 支援開発により構築されています。
+**PDFREOR**（`v3.2.0`）は、**AI を活用して設計・実装・最適化された** Android タブレット向け PDF リーダー兼スタイラス注釈エディターです。Flutter、`pdfrx`、`syncfusion_flutter_pdf` を基盤とし、マルチタブ閲覧、パームリジェクション対応の手書き入力、図形・テキストボックス・LaTeX 数式ボックス、ページ編集、さらに再編集可能な **Advanced** 保存と標準 PDF として統合する **Standard** 保存まで、一連のアーキテクチャと検証テストを含めて AI 支援開発により構築されています。
 
 ### 主な機能
 
@@ -183,7 +183,7 @@ flutter build apk --release
 
 ### 项目简介
 
-**PDFREOR**（`v3.1.0`）是一款**完全基于 AI 辅助设计与构建**的 Android 平板 PDF 阅读器与手写批注编辑器，采用 Flutter、`pdfrx` 与 `syncfusion_flutter_pdf` 开发。从多标签流畅阅读、主动笔双输入防误触、LaTeX 公式光栅化与去重、零膨胀 **Advanced** 可编辑持久化引擎，到代码结构优化与单元测试验证，整体工程均由 AI 协作完成。
+**PDFREOR**（`v3.2.0`）是一款**完全基于 AI 辅助设计与构建**的 Android 平板 PDF 阅读器与手写批注编辑器，采用 Flutter、`pdfrx` 与 `syncfusion_flutter_pdf` 开发。从多标签流畅阅读、主动笔双输入防误触、LaTeX 公式光栅化与去重、零膨胀 **Advanced** 可编辑持久化引擎，到代码结构优化与单元测试验证，整体工程均由 AI 协作完成。
 
 ### 核心功能
 

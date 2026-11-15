@@ -274,6 +274,22 @@ extension _HomeScreenAppBar on _HomeScreenState {
                   _startScan();
                 }
               }
+              final updatedHidden = await _scannerService.getHiddenFolders();
+              if (!mounted) return;
+              final hasUnhidden = _hiddenFolders.any((h) => !updatedHidden.contains(h));
+              final hiddenChanged =
+                  updatedHidden.length != _hiddenFolders.length || hasUnhidden;
+              if (hiddenChanged) {
+                _refresh(() {
+                  _hiddenFolders
+                    ..clear()
+                    ..addAll(updatedHidden);
+                  _applyFilterAndSort();
+                });
+                if (hasUnhidden) {
+                  _startScan();
+                }
+              }
             },
           ),
         ],

@@ -6,6 +6,7 @@ extension _HomeScreenActions on _HomeScreenState {
     Color? backgroundColor,
     Duration duration = const Duration(seconds: 4),
     bool replaceCurrent = false,
+    SnackBarAction? action,
   }) {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -17,6 +18,7 @@ extension _HomeScreenActions on _HomeScreenState {
         content: Text(message),
         backgroundColor: backgroundColor,
         duration: duration,
+        action: action,
       ),
     );
   }
@@ -124,6 +126,14 @@ extension _HomeScreenActions on _HomeScreenState {
     final path = await _scannerService.pickDirectory();
     if (path == null) return;
 
+    if (PdfScannerService.isPathInHiddenFolders(path, _hiddenFolders)) {
+      _showHomeSnackBar(
+        'Selected folder is currently hidden in Settings',
+        replaceCurrent: true,
+      );
+      return;
+    }
+
     _refresh(() {
       _isLoading = true;
       _scanStatusText = 'Scanning selected folder...';
@@ -165,12 +175,22 @@ extension _HomeScreenActions on _HomeScreenState {
 
   void _applyFilterAndSort() {
     final query = _searchController.text.trim().toLowerCase();
+    final visibleFiles = _hiddenFolders.isEmpty
+        ? _allFiles
+        : _allFiles
+              .where(
+                (f) => !PdfScannerService.isPathInHiddenFolders(
+                  f.path,
+                  _hiddenFolders,
+                ),
+              )
+              .toList();
     List<PdfFileInfo> list;
 
     if (query.isNotEmpty) {
-      list = _allFiles.where((f) => f.name.toLowerCase().contains(query)).toList();
+      list = visibleFiles.where((f) => f.name.toLowerCase().contains(query)).toList();
     } else {
-      list = List.from(_allFiles);
+      list = List.from(visibleFiles);
     }
 
     switch (_sortType) {
@@ -652,6 +672,58 @@ extension _HomeScreenActions on _HomeScreenState {
       },
       onShowDetails: () => _showFileDetails(file),
     );
+  }
+
+  void _showFolderContextMenu(String folderPath, List<PdfFileInfo> files) {
+    HapticFeedback.mediumImpact();
+    final normalized = PdfScannerService.normalizeFolderPath(folderPath);
+    final baseName = p.basename(folderPath);
+    final folderName = baseName.isNotEmpty ? baseName : folderPath;
+    final canHide = normalized.isNotEmpty &&
+        folderPath != 'Root Directory' &&
+        normalized != '/' &&
+        normalized != Platform.pathSeparator;
+
+    showPdfFolderContextMenu(
+      context,
+      folderName: folderName,
+      folderPath: folderPath,
+      fileCount: files.length,
+      isCollapsed: _collapsedFolders.contains(folderPath),
+      canHide: canHide,
+      onToggleCollapse: () => _toggleFolderCollapse(folderPath),
+      onHideFolder: () => _hideFolder(normalized, folderName),
+    );
+  }
+
+  Future<void> _hideFolder(String folderPath, String folderName) async {
+    _refresh(() {
+      _hiddenFolders.add(folderPath);
+      _selectedFilePaths.removeWhere(
+        (path) => PdfScannerService.isPathInHiddenFolders(path, [folderPath]),
+      );
+      if (_selectedFilePaths.isEmpty) {
+        _isSelectionMode = false;
+      }
+      _applyFilterAndSort();
+    });
+    await _scannerService.addHiddenFolder(folderPath);
+    _showHomeSnackBar(
+      'Hid "$folderName"',
+      replaceCurrent: true,
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () => _unhideFolder(folderPath),
+      ),
+    );
+  }
+
+  Future<void> _unhideFolder(String folderPath) async {
+    _refresh(() {
+      _hiddenFolders.remove(folderPath);
+      _applyFilterAndSort();
+    });
+    await _scannerService.removeHiddenFolder(folderPath);
   }
 
   void _showSortOptionsSheet() {

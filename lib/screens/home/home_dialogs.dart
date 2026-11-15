@@ -293,6 +293,128 @@ void showPdfFileContextMenu(
   );
 }
 
+void showPdfFolderContextMenu(
+  BuildContext context, {
+  required String folderName,
+  required String folderPath,
+  required int fileCount,
+  required bool isCollapsed,
+  required bool canHide,
+  required VoidCallback onToggleCollapse,
+  required VoidCallback onHideFolder,
+}) {
+  final theme = Theme.of(context);
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      return SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetDragHandle(margin: EdgeInsets.only(top: 12, bottom: 8)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.folder_rounded,
+                        color: theme.colorScheme.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            folderName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$fileCount ${fileCount == 1 ? 'file' : 'files'} • $folderPath',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(
+                  isCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+                ),
+                title: Text(isCollapsed ? 'Expand Folder' : 'Collapse Folder'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onToggleCollapse();
+                },
+              ),
+              if (folderPath.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded),
+                  title: const Text('Copy Folder Path'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(ClipboardData(text: folderPath));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Folder path copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              if (canHide)
+                ListTile(
+                  leading: Icon(
+                    Icons.visibility_off_outlined,
+                    color: theme.colorScheme.error,
+                  ),
+                  title: Text(
+                    'Hide Folder',
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                  subtitle: const Text(
+                    'Stop showing PDFs from this folder (manage in Settings)',
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    onHideFolder();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class RenameFileDialog extends StatefulWidget {
   final String initialName;
   final String extensionText;

@@ -18,9 +18,37 @@ class PdfScannerService {
   Set<String> _customFolders = {};
   Set<String> _importedFilePaths = {};
   Set<String> _collapsedFolders = {};
+  Set<String> _hiddenFolders = {};
   String _folderSort = 'nameAsc';
   String _fileSort = 'dateDesc';
   Future<void>? _loadFuture;
+
+  static String normalizeFolderPath(String path) {
+    var normalized = path.trim();
+    final sep = Platform.pathSeparator;
+    while (normalized.length > 1 &&
+        (normalized.endsWith(sep) || normalized.endsWith('/'))) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
+  static bool isPathInHiddenFolders(
+    String candidatePath,
+    Iterable<String> hiddenFolders,
+  ) {
+    final candidate = normalizeFolderPath(candidatePath);
+    if (candidate.isEmpty || hiddenFolders.isEmpty) return false;
+    final sep = Platform.pathSeparator;
+    for (final rawHidden in hiddenFolders) {
+      final hidden = normalizeFolderPath(rawHidden);
+      if (hidden.isEmpty || hidden == sep || hidden == '/') continue;
+      if (candidate == hidden || candidate.startsWith('$hidden$sep')) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   Future<void> _ensureLibraryLoaded() {
     return _loadFuture ??= _loadLibraryFromDisk();
@@ -42,6 +70,12 @@ class PdfScannerService {
         if (map['collapsedFolders'] is List) {
           _collapsedFolders = (map['collapsedFolders'] as List).map((e) => e.toString()).toSet();
         }
+        if (map['hiddenFolders'] is List) {
+          _hiddenFolders = (map['hiddenFolders'] as List)
+              .map((e) => normalizeFolderPath(e.toString()))
+              .where((p) => p.isNotEmpty)
+              .toSet();
+        }
         if (map['folderSort'] is String) {
           _folderSort = map['folderSort'] as String;
         }
@@ -60,6 +94,7 @@ class PdfScannerService {
         'customFolders': _customFolders.toList(),
         'importedFilePaths': _importedFilePaths.toList(),
         'collapsedFolders': _collapsedFolders.toList(),
+        'hiddenFolders': _hiddenFolders.toList(),
         'folderSort': _folderSort,
         'fileSort': _fileSort,
       };
@@ -70,6 +105,44 @@ class PdfScannerService {
   Future<Set<String>> getCollapsedFolders() async {
     await _ensureLibraryLoaded();
     return Set.from(_collapsedFolders);
+  }
+
+  Future<Set<String>> getHiddenFolders() async {
+    await _ensureLibraryLoaded();
+    return Set.from(_hiddenFolders);
+  }
+
+  Future<bool> addHiddenFolder(String folderPath) async {
+    await _ensureLibraryLoaded();
+    final normalized = normalizeFolderPath(folderPath);
+    if (normalized.isEmpty ||
+        normalized == '/' ||
+        normalized == Platform.pathSeparator ||
+        normalized == 'Root Directory') {
+      return false;
+    }
+    if (_hiddenFolders.add(normalized)) {
+      await _saveLibrary();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> removeHiddenFolder(String folderPath) async {
+    await _ensureLibraryLoaded();
+    final normalized = normalizeFolderPath(folderPath);
+    if (_hiddenFolders.remove(normalized)) {
+      await _saveLibrary();
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> clearHiddenFolders() async {
+    await _ensureLibraryLoaded();
+    if (_hiddenFolders.isEmpty) return;
+    _hiddenFolders.clear();
+    await _saveLibrary();
   }
 
   Future<void> setFolderCollapsed(String folderPath, bool isCollapsed) async {
@@ -254,9 +327,10 @@ class PdfScannerService {
 
     final rootPaths = directoriesToScan.map((d) => d.path).toList();
     final importedSnapshot = _importedFilePaths.toList();
+    final hiddenSnapshot = _hiddenFolders.toList();
 
     return Isolate.run(
-      () => _scanPathsInBackground(rootPaths, importedSnapshot),
+      () => _scanPathsInBackground(rootPaths, importedSnapshot, hiddenSnapshot),
     );
   }
 
@@ -266,8 +340,9 @@ class PdfScannerService {
     final dir = Directory(directoryPath);
     if (!await dir.exists()) return [];
 
+    final hiddenSnapshot = _hiddenFolders.toList();
     return Isolate.run(
-      () => _scanPathsInBackground([directoryPath], const []),
+      () => _scanPathsInBackground([directoryPath], const [], hiddenSnapshot),
     );
   }
 
@@ -304,10 +379,19 @@ class PdfScannerService {
     }
   }
 
+  /// Exposed for unit tests verifying hidden-folder filtering during scan.
+  static List<PdfFileInfo> scanPathsInBackgroundForTest(
+    List<String> rootPaths,
+    List<String> importedPaths, [
+    List<String> hiddenFolders = const [],
+  ]) =>
+      _scanPathsInBackground(rootPaths, importedPaths, hiddenFolders);
+
   /// Pure isolate-safe recursive scanner using an O(1) `Queue<Directory>`.
   static List<PdfFileInfo> _scanPathsInBackground(
     List<String> rootPaths,
     List<String> importedPaths,
+    List<String> hiddenFolders,
   ) {
     const skipFolders = {
       'Android/data',
@@ -319,6 +403,7 @@ class PdfScannerService {
     final Queue<Directory> queue = Queue<Directory>();
 
     for (final root in rootPaths) {
+      if (isPathInHiddenFolders(root, hiddenFolders)) continue;
       final d = Directory(root);
       if (d.existsSync()) {
         queue.add(d);
@@ -347,13 +432,15 @@ class PdfScannerService {
                 }
               }
             } else if (entity is Directory) {
-              bool shouldSkip = false;
-              for (final skip in skipFolders) {
-                if (basename == skip ||
-                    path.endsWith('$sep$skip') ||
-                    path.contains('$sep$skip$sep')) {
-                  shouldSkip = true;
-                  break;
+              bool shouldSkip = isPathInHiddenFolders(path, hiddenFolders);
+              if (!shouldSkip) {
+                for (final skip in skipFolders) {
+                  if (basename == skip ||
+                      path.endsWith('$sep$skip') ||
+                      path.contains('$sep$skip$sep')) {
+                    shouldSkip = true;
+                    break;
+                  }
                 }
               }
               if (!shouldSkip) {
@@ -366,6 +453,7 @@ class PdfScannerService {
     }
 
     for (final filePath in importedPaths) {
+      if (isPathInHiddenFolders(filePath, hiddenFolders)) continue;
       if (!foundFiles.containsKey(filePath)) {
         try {
           final file = File(filePath);
