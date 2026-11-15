@@ -1,0 +1,117 @@
+name: Build Ubuntu Linux (desktop)
+
+on:
+  push:
+    branches:
+      - desktop
+  workflow_dispatch:
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ubuntu build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libstdc++-12-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run unit and widget tests
+        run: flutter test
+
+      - name: Build Linux release bundle
+        run: flutter build linux --release
+
+      - name: Package Ubuntu .deb and .tar.gz
+        run: |
+          VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          ARCH=$(dpkg --print-architecture)
+          BUNDLE_DIR="build/linux/x64/release/bundle"
+          if [ ! -d "$BUNDLE_DIR" ]; then
+            BUNDLE_DIR="build/linux/arm64/release/bundle"
+          fi
+
+          rm -rf dist
+          mkdir -p dist
+
+          # Portable archive
+          tar -C "$BUNDLE_DIR" -czf "dist/pdfreor-ubuntu-${ARCH}.tar.gz" .
+
+          # Ubuntu .deb package
+          PKG_ROOT="dist/deb_root"
+          mkdir -p "${PKG_ROOT}/DEBIAN" \
+                   "${PKG_ROOT}/opt/pdfreor" \
+                   "${PKG_ROOT}/usr/bin" \
+                   "${PKG_ROOT}/usr/share/applications" \
+                   "${PKG_ROOT}/usr/share/icons/hicolor/512x512/apps"
+
+          cp -r "${BUNDLE_DIR}/." "${PKG_ROOT}/opt/pdfreor/"
+          chmod +x "${PKG_ROOT}/opt/pdfreor/pdfreor"
+
+          cat << 'EOF' > "${PKG_ROOT}/usr/bin/pdfreor"
+          #!/bin/sh
+          exec /opt/pdfreor/pdfreor "$@"
+          EOF
+          chmod 755 "${PKG_ROOT}/usr/bin/pdfreor"
+
+          cp assets/app_icon.png "${PKG_ROOT}/usr/share/icons/hicolor/512x512/apps/pdfreor.png"
+
+          cat << 'EOF' > "${PKG_ROOT}/usr/share/applications/pdfreor.desktop"
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=PDFREOR
+          Comment=A fast, responsive PDF reader and annotation editor for desktop
+          Exec=/opt/pdfreor/pdfreor %F
+          Icon=pdfreor
+          Terminal=false
+          Categories=Office;Viewer;Utility;
+          MimeType=application/pdf;
+          StartupWMClass=com.yin.pdfreor
+          EOF
+
+          cat << EOF > "${PKG_ROOT}/DEBIAN/control"
+          Package: pdfreor
+          Version: ${VERSION}
+          Section: editors
+          Priority: optional
+          Architecture: ${ARCH}
+          Depends: libgtk-3-0 | libgtk-3-0t64, xdg-utils
+          Maintainer: PDFREOR Maintainers <https://github.com/yingongsui/PDFREOR>
+          Description: A fast, responsive PDF reader and annotation editor for desktop.
+          EOF
+
+          dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/pdfreor-ubuntu-${ARCH}.deb"
+          rm -rf "${PKG_ROOT}"
+
+      - name: Upload Ubuntu artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfreor-ubuntu
+          path: |
+            dist/pdfreor-ubuntu-*.deb
+            dist/pdfreor-ubuntu-*.tar.gz
+          retention-days: 14

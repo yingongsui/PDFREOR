@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
@@ -444,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     children: [
                       Icon(
-                        Icons.desktop_mac_rounded,
+                        Platform.isMacOS ? Icons.desktop_mac_rounded : Icons.computer_rounded,
                         size: 16,
                         color: theme.colorScheme.primary,
                       ),
@@ -460,9 +461,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const SettingsFeatureRow(
+                  SettingsFeatureRow(
                     icon: Icons.mouse_rounded,
-                    text: 'Mouse text selection, right-click context menus & Cmd + Scroll zoom',
+                    text:
+                        'Mouse text selection, right-click context menus & ${Platform.isMacOS ? 'Cmd' : 'Ctrl'} + Scroll zoom',
                   ),
                   const SettingsFeatureRow(
                     icon: Icons.keyboard_rounded,

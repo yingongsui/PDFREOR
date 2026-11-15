@@ -108,6 +108,115 @@ class SystemFontResolver implements PdfFontResolver {
     westernSansFallbacks: ['Helvetica.ttc', 'HelveticaNeue.ttc'],
   );
 
+  static const SystemFontProfile linuxProfile = SystemFontProfile(
+    searchDirectories: [
+      '/usr/share/fonts/opentype/noto',
+      '/usr/share/fonts/truetype/noto',
+      '/usr/share/fonts/truetype/wqy',
+      '/usr/share/fonts/opentype/ipafont-gothic',
+      '/usr/share/fonts/opentype/ipafont-mincho',
+      '/usr/share/fonts/truetype/liberation',
+      '/usr/share/fonts/truetype/dejavu',
+      '/usr/share/fonts/truetype/freefont',
+      '/usr/share/fonts/truetype/ubuntu',
+      '/usr/share/fonts',
+    ],
+    cjkSansFiles: [
+      'NotoSansCJK-Regular.ttc',
+      'NotoSansCJK-Medium.ttc',
+      'wqy-zenhei.ttc',
+      'wqy-microhei.ttc',
+      'ipag.ttf',
+    ],
+    cjkSerifFiles: [
+      'NotoSerifCJK-Regular.ttc',
+      'ipam.ttf',
+    ],
+    arabicFiles: [
+      'NotoNaskhArabic-Regular.ttf',
+      'NotoSansArabic-Regular.ttf',
+    ],
+    hebrewFiles: [
+      'NotoSansHebrew-Regular.ttf',
+      'FreeSerif.ttf',
+    ],
+    thaiFiles: [
+      'NotoSansThai-Regular.ttf',
+      'Loma.ttf',
+    ],
+    symbolFiles: [
+      'NotoSansSymbols-Regular.ttf',
+      'DejaVuSans.ttf',
+    ],
+    westernMonoFiles: [
+      'LiberationMono-Regular.ttf',
+      'DejaVuSansMono.ttf',
+      'NotoMono-Regular.ttf',
+      'UbuntuMono-R.ttf',
+    ],
+    westernSerifRegular: 'LiberationSerif-Regular.ttf',
+    westernSerifBold: 'LiberationSerif-Bold.ttf',
+    westernSerifItalic: 'LiberationSerif-Italic.ttf',
+    westernSerifBoldItalic: 'LiberationSerif-BoldItalic.ttf',
+    westernSerifFallbacks: ['DejaVuSerif.ttf', 'FreeSerif.ttf'],
+    westernSansRegular: 'LiberationSans-Regular.ttf',
+    westernSansBold: 'LiberationSans-Bold.ttf',
+    westernSansItalic: 'LiberationSans-Italic.ttf',
+    westernSansBoldItalic: 'LiberationSans-BoldItalic.ttf',
+    westernSansFallbacks: ['DejaVuSans.ttf', 'Ubuntu-R.ttf', 'FreeSans.ttf'],
+  );
+
+  static const SystemFontProfile windowsProfile = SystemFontProfile(
+    searchDirectories: [
+      r'C:\Windows\Fonts',
+    ],
+    cjkSansFiles: [
+      'msyh.ttc',
+      'simhei.ttf',
+      'YuGothR.ttc',
+      'msgothic.ttc',
+      'meiryo.ttc',
+      'malgun.ttf',
+    ],
+    cjkSerifFiles: [
+      'simsun.ttc',
+      'msmincho.ttc',
+      'mingliu.ttc',
+      'batang.ttc',
+    ],
+    arabicFiles: [
+      'arial.ttf',
+      'tahoma.ttf',
+    ],
+    hebrewFiles: [
+      'arial.ttf',
+      'tahoma.ttf',
+    ],
+    thaiFiles: [
+      'tahoma.ttf',
+      'leelawui.ttf',
+    ],
+    symbolFiles: [
+      'seguisym.ttf',
+      'symbol.ttf',
+    ],
+    westernMonoFiles: [
+      'consola.ttf',
+      'cour.ttf',
+      'lucon.ttf',
+    ],
+    westernSerifRegular: 'times.ttf',
+    westernSerifBold: 'timesbd.ttf',
+    westernSerifItalic: 'timesi.ttf',
+    westernSerifBoldItalic: 'timesbi.ttf',
+    westernSerifFallbacks: ['georgia.ttf', 'cambria.ttc'],
+    westernSansRegular: 'arial.ttf',
+    westernSansBold: 'arialbd.ttf',
+    westernSansItalic: 'ariali.ttf',
+    westernSansBoldItalic: 'arialbi.ttf',
+    westernSansFallbacks: ['calibri.ttf', 'segoeui.ttf', 'tahoma.ttf'],
+  );
+
   static const List<String> _cjkKeywords = [
     'cjk',
     'sourcehan',
@@ -462,6 +571,18 @@ class MacOsSystemFontResolver extends SystemFontResolver {
       : super(profile: SystemFontResolver.macOsProfile);
 }
 
+/// Linux / Ubuntu system font resolver.
+class LinuxSystemFontResolver extends SystemFontResolver {
+  LinuxSystemFontResolver({super.searchDirectories})
+      : super(profile: SystemFontResolver.linuxProfile);
+}
+
+/// Windows system font resolver.
+class WindowsSystemFontResolver extends SystemFontResolver {
+  WindowsSystemFontResolver({super.searchDirectories})
+      : super(profile: SystemFontResolver.windowsProfile);
+}
+
 /// Manages system font registration for `pdfrx` so PDFs with
 /// unembedded CJK or legacy CID fonts render accurately on desktop devices.
 class PdfSystemFontService {
@@ -512,6 +633,12 @@ class PdfSystemFontService {
   SystemFontResolver? _createPlatformResolver() {
     if (Platform.isMacOS) {
       return MacOsSystemFontResolver();
+    }
+    if (Platform.isLinux) {
+      return LinuxSystemFontResolver();
+    }
+    if (Platform.isWindows) {
+      return WindowsSystemFontResolver();
     }
     return null;
   }

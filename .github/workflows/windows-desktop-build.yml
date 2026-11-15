@@ -1,0 +1,94 @@
+name: Build Windows (desktop)
+
+on:
+  push:
+    branches:
+      - desktop
+  workflow_dispatch:
+    inputs:
+      package_format:
+        description: 'Windows package format to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - installer
+          - zip
+
+jobs:
+  build_windows:
+    runs-on: windows-latest
+    env:
+      PACKAGE_FORMAT: ${{ github.event.inputs.package_format || 'both' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run unit and widget tests
+        run: flutter test
+
+      - name: Build Windows release app
+        run: flutter build windows --release
+
+      - name: Prepare dist directory
+        shell: pwsh
+        run: |
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+          New-Item -ItemType Directory -Path dist | Out-Null
+
+      - name: Package portable ZIP
+        if: ${{ env.PACKAGE_FORMAT == 'both' || env.PACKAGE_FORMAT == 'zip' }}
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "build\windows\x64\runner\Release\*" `
+            -DestinationPath "dist\pdfreor-windows-x64-portable.zip" `
+            -Force
+
+      - name: Package Inno Setup installer
+        if: ${{ env.PACKAGE_FORMAT == 'both' || env.PACKAGE_FORMAT == 'installer' }}
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path "pubspec.yaml" -Pattern "^version:\s*([^+\r\n]+)" | Select-Object -First 1
+          $version = $versionLine.Matches.Groups[1].Value.Trim()
+
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+            if ($cmd) {
+              $iscc = $cmd.Source
+            } else {
+              choco install innosetup -y
+              $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            }
+          }
+
+          & $iscc `
+            "/DMyAppVersion=$version" `
+            "/DSourceDir=$PWD\build\windows\x64\runner\Release" `
+            "/DOutputDir=$PWD\dist" `
+            "windows\packaging\pdfreor.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfreor-windows
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

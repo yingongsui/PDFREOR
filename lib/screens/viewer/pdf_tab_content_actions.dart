@@ -471,10 +471,6 @@ extension _PdfTabContentActions on PdfTabContentState {
       );
       if (savedUri == null) return;
 
-      if (!Platform.isMacOS) {
-        await File.fromUri(savedUri).writeAsBytes(flattenedBytes, flush: true);
-      }
-
       _showViewerSnackBar(
         'Standard flattened PDF exported!',
         backgroundColor: Colors.green,

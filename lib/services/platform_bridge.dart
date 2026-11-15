@@ -9,6 +9,26 @@ class PlatformBridge {
   static const MethodChannel stylusChannel = MethodChannel('com.yin.pdfreor/stylus');
 
   static Future<bool> openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return false;
+    }
+    if (Platform.isLinux) {
+      try {
+        final result = await Process.run('xdg-open', [url]);
+        return result.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
+    if (Platform.isWindows) {
+      try {
+        final result = await Process.run('rundll32', ['url.dll,FileProtocolHandler', url]);
+        return result.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
     try {
       final ok = await stylusChannel.invokeMethod<bool>('openUrl', {'url': url});
       return ok == true;
