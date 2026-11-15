@@ -34,14 +34,12 @@ part 'pdf_tab_content_build.dart';
 
 class PdfTabContent extends StatefulWidget {
   final PdfFileInfo file;
-  final bool initialStylusConnected;
   final VoidCallback? onDirtyChanged;
   final void Function(int currentPage, int totalPages)? onPageInfoChanged;
 
   const PdfTabContent({
     super.key,
     required this.file,
-    this.initialStylusConnected = false,
     this.onDirtyChanged,
     this.onPageInfoChanged,
   });
@@ -162,18 +160,11 @@ class PdfTabContentState extends State<PdfTabContent> {
   bool _isDocumentLoaded = false;
   int _currentPage = 1;
   int _pagesCount = 1;
-  DateTime? _lastButtonDownTime;
-  DateTime? _lastButtonToggleTime;
 
   int get currentPage => _currentPage;
   int get pagesCount => _pagesCount;
 
   void jumpToPage(int pageNumber) => _jumpToPage(pageNumber);
-
-  void notifyStylusConnected() => _notifyStylusConnected();
-
-  Future<void> handleStylusPlatformCall(MethodCall call) =>
-      _handleStylusPlatformCall(call);
 
   Future<void> saveFromShortcut() => _saveToOriginalFile(showFeedback: true);
 
@@ -253,7 +244,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   bool _isMetaZoomModifierPressed = false;
 
   void _syncMetaZoomModifierState() {
-    if (!PlatformBridge.isDesktop || !mounted) return;
+    if (!mounted) return;
     final pressed = HardwareKeyboard.instance.isMetaPressed;
     if (_isMetaZoomModifierPressed != pressed) {
       setState(() {
@@ -268,7 +259,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   }
 
   void _handleDesktopPointerSignal(PointerSignalEvent event) {
-    if (!PlatformBridge.isDesktop || event is! PointerScrollEvent) {
+    if (event is! PointerScrollEvent) {
       return;
     }
     _syncMetaZoomModifierState();
@@ -322,7 +313,7 @@ class PdfTabContentState extends State<PdfTabContent> {
   double _activeFontSize = 16.0;
   Offset _toolbarPosition = const Offset(12, 100);
   bool _toolbarCollapsed = false;
-  bool _isStylusDetected = false;
+  final bool _isStylusDetected = false;
   bool _stylusOnlyMode = false;
   AppFontFamily _textBoxFont = AppFontFamily.sansSerif;
 
@@ -395,16 +386,8 @@ class PdfTabContentState extends State<PdfTabContent> {
     _drawingController = DrawingController();
     _drawingController.addListener(_onDrawingControllerChanged);
     EditorSettingsService.settingsNotifier.addListener(_onExternalSettingsChanged);
-    if (PlatformBridge.isDesktop) {
-      _isMetaZoomModifierPressed = HardwareKeyboard.instance.isMetaPressed;
-      HardwareKeyboard.instance.addHandler(_handleGlobalModifierKeyEvent);
-    }
-
-    if (PlatformBridge.isMobile && widget.initialStylusConnected) {
-      _isStylusDetected = true;
-      _stylusOnlyMode = true;
-      _activeTool = EditorTool.pen;
-    }
+    _isMetaZoomModifierPressed = HardwareKeyboard.instance.isMetaPressed;
+    HardwareKeyboard.instance.addHandler(_handleGlobalModifierKeyEvent);
 
     EditorSettingsService.loadSettings().then((s) {
       if (mounted) {
@@ -431,9 +414,6 @@ class PdfTabContentState extends State<PdfTabContent> {
       _isLoading = true;
       _beginInitialDocumentOpen();
     }
-    if (!oldWidget.initialStylusConnected && widget.initialStylusConnected) {
-      _onStylusDetected();
-    }
   }
 
   @override
@@ -449,9 +429,7 @@ class PdfTabContentState extends State<PdfTabContent> {
     ReadingProgressService.instance.flush().ignore();
     _originalBaseBytes = null;
     _loadingWatchdogTimer?.cancel();
-    if (PlatformBridge.isDesktop) {
-      HardwareKeyboard.instance.removeHandler(_handleGlobalModifierKeyEvent);
-    }
+    HardwareKeyboard.instance.removeHandler(_handleGlobalModifierKeyEvent);
     EditorSettingsService.settingsNotifier.removeListener(_onExternalSettingsChanged);
     _pdfViewerController.removeListener(_onPdfMatrixChanged);
     _textSelectionLocalRectNotifier.dispose();

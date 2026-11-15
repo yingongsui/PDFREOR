@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
-import '../services/pdf_scanner_service.dart';
 import '../services/platform_bridge.dart';
 import 'settings/latex_operators_section.dart';
 import 'settings/settings_widgets.dart';
@@ -13,55 +12,15 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
-  final PdfScannerService _scannerService = PdfScannerService.instance;
-  bool _hasPermission = false;
-  bool _isChecking = true;
+class _SettingsScreenState extends State<SettingsScreen> {
   EditorSettings _editorSettings = const EditorSettings();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _checkPermission();
     EditorSettingsService.loadSettings().then((s) {
       if (mounted) setState(() => _editorSettings = s);
     });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkPermission();
-    }
-  }
-
-  Future<void> _checkPermission() async {
-    final granted = await _scannerService.hasStoragePermission();
-    if (mounted) {
-      setState(() {
-        _hasPermission = granted;
-        _isChecking = false;
-      });
-    }
-  }
-
-  Future<void> _requestPermission() async {
-    final granted = await _scannerService.requestStoragePermission();
-    if (mounted) {
-      setState(() {
-        _hasPermission = granted;
-      });
-      if (!granted) {
-        _scannerService.openSettings();
-      }
-    }
   }
 
   Future<void> _updateEditorSettings(EditorSettings updated) async {
@@ -103,14 +62,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _hasPermission
-                              ? Colors.green.withValues(alpha: 0.12)
-                              : Colors.orange.withValues(alpha: 0.12),
+                          color: Colors.green.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(
-                          _hasPermission ? Icons.check_circle_rounded : Icons.warning_rounded,
-                          color: _hasPermission ? Colors.green : Colors.orange,
+                        child: const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.green,
                           size: 24,
                         ),
                       ),
@@ -119,24 +76,16 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              !PlatformBridge.isMobile
-                                  ? 'Local File Access'
-                                  : 'All-Files Storage Access',
-                              style: const TextStyle(
+                            const Text(
+                              'Local File Access',
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              !PlatformBridge.isMobile
-                                  ? 'Granted • Documents, Downloads, and selected folders'
-                                  : _isChecking
-                                      ? 'Checking permission status...'
-                                      : _hasPermission
-                                          ? 'Granted • Device storage scanning enabled'
-                                          : 'Not granted • Required to scan and read PDFs',
+                              'Granted • Documents, Downloads, and selected folders',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -149,44 +98,20 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _hasPermission
-                              ? Colors.green.withValues(alpha: 0.15)
-                              : Colors.orange.withValues(alpha: 0.15),
+                          color: Colors.green.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          _hasPermission ? 'GRANTED' : 'REQUIRED',
+                          'GRANTED',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: _hasPermission ? Colors.green.shade800 : Colors.orange.shade900,
+                            color: Colors.green.shade800,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  if (PlatformBridge.isMobile) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (!_hasPermission)
-                          FilledButton.tonalIcon(
-                            onPressed: _requestPermission,
-                            icon: const Icon(Icons.lock_open_rounded, size: 16),
-                            label: const Text('Grant Access'),
-                          )
-                        else
-                          OutlinedButton.icon(
-                            onPressed: () => _scannerService.openSettings(),
-                            icon: const Icon(Icons.settings_rounded, size: 16),
-                            label: const Text('Manage in Settings'),
-                          ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),

@@ -5,14 +5,10 @@ import 'screens/home_screen.dart';
 import 'services/editor_settings_service.dart';
 import 'services/pdf_system_font_service.dart';
 import 'services/pdf_tab_manager.dart';
-import 'services/platform_bridge.dart';
 import 'services/reading_progress_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (PlatformBridge.isMobile) {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  }
   await Future.wait([
     pdfrxFlutterInitialize()
         .then((_) => PdfSystemFontService.instance.init())

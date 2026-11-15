@@ -56,65 +56,6 @@ class SystemFontResolver implements PdfFontResolver {
 
   final SystemFontProfile profile;
 
-  static const SystemFontProfile androidProfile = SystemFontProfile(
-    searchDirectories: [
-      '/system/fonts',
-      '/product/fonts',
-      '/system/product/fonts',
-      '/apex/com.android.i18n/etc/fonts',
-      '/vendor/fonts',
-    ],
-    cjkSansFiles: [
-      'NotoSansCJK-Regular.ttc',
-      'NotoSansCJKjp-Regular.otf',
-      'NotoSansCJKsc-Regular.otf',
-      'NotoSansCJKtc-Regular.otf',
-      'NotoSansCJKkr-Regular.otf',
-      'DroidSansFallbackFull.ttf',
-      'DroidSansFallback.ttf',
-      'SECMonoCJK.ttf',
-    ],
-    cjkSerifFiles: [
-      'NotoSerifCJK-Regular.ttc',
-      'NotoSerifCJKjp-Regular.otf',
-      'NotoSerifCJKsc-Regular.otf',
-      'NotoSerifCJKtc-Regular.otf',
-      'NotoSerifCJKkr-Regular.otf',
-    ],
-    arabicFiles: [
-      'NotoNaskhArabic-Bold.ttf',
-      'NotoNaskhArabic-Regular.ttf',
-      'NotoSansArabic-Regular.ttf',
-    ],
-    hebrewFiles: [
-      'NotoSansHebrew-Bold.ttf',
-      'NotoSansHebrew-Regular.ttf',
-    ],
-    thaiFiles: [
-      'NotoSansThai-Bold.ttf',
-      'NotoSansThai-Regular.ttf',
-    ],
-    symbolFiles: [
-      'NotoSansSymbols-Regular-Subsetted.ttf',
-      'NotoSansSymbols-Regular-Subsetted2.ttf',
-    ],
-    westernMonoFiles: [
-      'DroidSansMono.ttf',
-      'CutiveMono.ttf',
-      'Roboto-Regular.ttf',
-    ],
-    westernSerifRegular: 'NotoSerif-Regular.ttf',
-    westernSerifBold: 'NotoSerif-Bold.ttf',
-    westernSerifItalic: 'NotoSerif-Italic.ttf',
-    westernSerifBoldItalic: 'NotoSerif-BoldItalic.ttf',
-    westernSerifFallbacks: ['DroidSerif-Regular.ttf', 'Roboto-Regular.ttf'],
-    westernSansRegular: 'Roboto-Regular.ttf',
-    westernSansBold: 'Roboto-Bold.ttf',
-    westernSansItalic: 'Roboto-Italic.ttf',
-    westernSansBoldItalic: 'Roboto-BoldItalic.ttf',
-    westernSansFallbacks: ['DroidSans.ttf'],
-  );
-
   static const SystemFontProfile macOsProfile = SystemFontProfile(
     searchDirectories: [
       '/System/Library/Fonts',
@@ -515,20 +456,14 @@ class SystemFontResolver implements PdfFontResolver {
   }
 }
 
-/// Android built-in system font resolver.
-class AndroidSystemFontResolver extends SystemFontResolver {
-  AndroidSystemFontResolver({super.searchDirectories})
-      : super(profile: SystemFontResolver.androidProfile);
-}
-
 /// macOS built-in system font resolver.
 class MacOsSystemFontResolver extends SystemFontResolver {
   MacOsSystemFontResolver({super.searchDirectories})
       : super(profile: SystemFontResolver.macOsProfile);
 }
 
-/// Manages Android system font registration for `pdfrx` so PDFs with
-/// unembedded CJK or legacy CID fonts render accurately on Android devices.
+/// Manages system font registration for `pdfrx` so PDFs with
+/// unembedded CJK or legacy CID fonts render accurately on desktop devices.
 class PdfSystemFontService {
   PdfSystemFontService._();
 
@@ -575,9 +510,6 @@ class PdfSystemFontService {
   Future<void>? _initFuture;
 
   SystemFontResolver? _createPlatformResolver() {
-    if (Platform.isAndroid) {
-      return AndroidSystemFontResolver();
-    }
     if (Platform.isMacOS) {
       return MacOsSystemFontResolver();
     }

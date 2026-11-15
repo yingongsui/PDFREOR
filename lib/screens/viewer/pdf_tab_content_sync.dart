@@ -105,12 +105,6 @@ extension _PdfTabContentSync on PdfTabContentState {
     }
   }
 
-  void _notifyStylusConnected() {
-    if (mounted) {
-      _onStylusDetected();
-    }
-  }
-
   void _notifyDirtyIfChanged() {
     final dirtyNow = _hasUnsavedChanges;
     if (dirtyNow != _lastNotifiedDirty) {

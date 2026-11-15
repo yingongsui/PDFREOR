@@ -273,15 +273,6 @@ extension _HomeScreenAppBar on _HomeScreenState {
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
-              if (!mounted) return;
-              final granted = await _scannerService.hasStoragePermission();
-              if (!mounted) return;
-              if (granted != _hasPermission) {
-                _refresh(() => _hasPermission = granted);
-                if (granted && _allFiles.isEmpty) {
-                  _startScan();
-                }
-              }
             },
           ),
         ],

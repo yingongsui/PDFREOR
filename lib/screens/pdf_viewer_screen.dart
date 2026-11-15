@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/pdf_file_info.dart';
 import '../services/pdf_tab_manager.dart';
-import '../services/platform_bridge.dart';
 import '../services/reading_progress_service.dart';
 import '../widgets/pdf_thumbnails_sidebar.dart';
 import 'viewer/pdf_tab_content.dart';
@@ -23,14 +22,12 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingObserver {
-  static const _stylusChannel = MethodChannel('com.yin.pdfreor/stylus');
   static const int _maxMountedCleanTabs = 3;
 
   final Map<String, GlobalKey<PdfTabContentState>> _tabKeys = {};
   final LinkedHashSet<String> _activatedTabPaths = LinkedHashSet<String>();
   final ValueNotifier<(int, int)> _pageInfoNotifier = ValueNotifier<(int, int)>((1, 1));
 
-  bool _isStylusConnectedCache = false;
   bool _isBackHandling = false;
 
   @override
@@ -43,24 +40,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     }
     _syncActivePageInfo();
     PdfTabManager.instance.addListener(_onTabManagerChanged);
-    if (PlatformBridge.isMobile) {
-      _stylusChannel.setMethodCallHandler(_handleStylusPlatformCall);
-      _stylusChannel.invokeMethod<bool>('isStylusConnected').then((connected) {
-        if (connected == true && mounted) {
-          _isStylusConnectedCache = true;
-          _activeTabState?.notifyStylusConnected();
-        }
-      }).catchError((_) {});
-    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ReadingProgressService.instance.flush().ignore();
-    if (PlatformBridge.isMobile) {
-      _stylusChannel.setMethodCallHandler(null);
-    }
     PdfTabManager.instance.removeListener(_onTabManagerChanged);
     _pageInfoNotifier.dispose();
     super.dispose();
@@ -81,23 +66,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     return _tabKeys[active.path]?.currentState;
   }
 
-  Future<void> _handleStylusPlatformCall(MethodCall call) async {
-    if (!mounted) return;
-    if (call.method == 'onStylusConnected') {
-      _isStylusConnectedCache = true;
-    }
-    await _activeTabState?.handleStylusPlatformCall(call);
-  }
-
   void _syncActivePageInfo() {
     final active = PdfTabManager.instance.activeFile;
     if (active != null) {
       final state = _tabKeys[active.path]?.currentState;
       if (state != null) {
         _pageInfoNotifier.value = (state.currentPage, state.pagesCount);
-        if (_isStylusConnectedCache) {
-          state.notifyStylusConnected();
-        }
       } else {
         final remembered = ReadingProgressService.instance.getLastPage(active.path);
         _pageInfoNotifier.value = (remembered, math.max(1, remembered));
@@ -223,7 +197,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
   }
 
   KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
-    if (!PlatformBridge.isDesktop || event is! KeyDownEvent) {
+    if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
     final hw = HardwareKeyboard.instance;
@@ -324,7 +298,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     final theme = Theme.of(context);
 
     return Focus(
-      autofocus: PlatformBridge.isDesktop,
+      autofocus: true,
       onKeyEvent: _handleDesktopKeyEvent,
       child: PopScope(
         canPop: false,
@@ -506,7 +480,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                   ? PdfTabContent(
                       key: _tabKeys.putIfAbsent(tabs[i].path, () => GlobalKey<PdfTabContentState>()),
                       file: tabs[i],
-                      initialStylusConnected: _isStylusConnectedCache,
                       onDirtyChanged: () {
                         if (mounted) setState(() {});
                       },

@@ -69,16 +69,12 @@ extension _PdfTabContentBuild on PdfTabContentState {
             behavior: HitTestBehavior.translucent,
             onPointerHover: (event) {
               _syncMetaZoomModifierState();
-              if (isStylusPointer(event)) {
-                _onStylusDetected();
-              }
             },
             onPointerDown: (event) {
-              if (isStylusPointer(event)) {
-                _onStylusDetected();
-                if (!_isEraserActive && _activeTool != EditorTool.eraser) {
-                  _onStylusDrawStarted();
-                }
+              if (isStylusPointer(event) &&
+                  !_isEraserActive &&
+                  _activeTool != EditorTool.eraser) {
+                _onStylusDrawStarted();
               }
             },
             child: Stack(
@@ -165,7 +161,6 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               scaleEnabled: _oneShotShape == null && !_isMetaZoomModifierPressed,
                               textSelectionParams: pdfrx.PdfTextSelectionParams(
                                 enabled: _shouldEnableTextSelection,
-                                enableSelectionHandles: PlatformBridge.isMobile ? true : null,
                                 showContextMenuAutomatically: false,
                                 onTextSelectionChange: _onTextSelectionChange,
                                 onSelectionHandlePanStart: _onSelectionHandlePanStart,
@@ -311,7 +306,6 @@ extension _PdfTabContentBuild on PdfTabContentState {
                               });
                               _notifyDirtyIfChanged();
                             },
-                            onStylusDetected: _onStylusDetected,
                             onStylusDrawStarted: _onStylusDrawStarted,
                           ),
                         ),
@@ -363,7 +357,7 @@ extension _PdfTabContentBuild on PdfTabContentState {
                   isStylusDetected: _isStylusDetected,
                   isEraserActive: _isEraserActive,
                   stylusOnlyMode: _stylusOnlyMode,
-                  showStylusOnlyToggle: PlatformBridge.isMobile,
+                  showStylusOnlyToggle: false,
                   canUndo: _drawingController.canUndo,
                   initialPosition: _toolbarPosition,
                   onPositionChanged: (newPos) {

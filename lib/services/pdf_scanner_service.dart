@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../models/pdf_file_info.dart';
 import 'atomic_file_store.dart';
 
@@ -13,7 +11,6 @@ class PdfScannerService {
   static final PdfScannerService instance = PdfScannerService._internal();
   PdfScannerService._internal();
 
-  static const _channel = MethodChannel('com.yin.pdfreor/stylus');
   static const _libraryFileName = 'pdf_library.json';
   Set<String> _customFolders = {};
   Set<String> _importedFilePaths = {};
@@ -147,85 +144,15 @@ class PdfScannerService {
     }
   }
 
-  /// Check whether appropriate storage permissions are granted.
-  Future<bool> hasStoragePermission() async {
-    if (!Platform.isAndroid) {
-      return true;
-    }
-
-    final isManageGranted = await Permission.manageExternalStorage.isGranted;
-    if (isManageGranted) return true;
-
-    final isStorageGranted = await Permission.storage.isGranted;
-    return isStorageGranted;
-  }
-
-  /// Request storage permissions. Returns true if granted.
-  Future<bool> requestStoragePermission() async {
-    if (!Platform.isAndroid) {
-      return true;
-    }
-
-    var status = await Permission.manageExternalStorage.request();
-    if (status.isGranted) return true;
-
-    status = await Permission.storage.request();
-    return status.isGranted;
-  }
-
-  /// Open app settings page if permission was permanently denied.
-  Future<bool> openSettings() async {
-    return await openAppSettings();
-  }
-
-  /// Discover all storage volumes (Internal + SD Card + User Custom Folders).
+  /// Discover default desktop folders (Documents, Downloads) and user custom folders.
   Future<List<Directory>> _getStorageDirectoriesToScan() async {
     final directoriesToScan = <Directory>[];
 
-    if (Platform.isAndroid) {
-      try {
-        final List<dynamic>? volumes =
-            await _channel.invokeMethod<List<dynamic>>('getStorageVolumes');
-        if (volumes != null) {
-          for (final vol in volumes) {
-            if (vol is String && vol.isNotEmpty) {
-              final d = Directory(vol);
-              if (await d.exists() && !directoriesToScan.any((x) => x.path == d.path)) {
-                directoriesToScan.add(d);
-              }
-            }
-          }
-        }
-      } catch (_) {}
-
-      final rootStorage = Directory('/storage/emulated/0');
-      if (await rootStorage.exists() &&
-          !directoriesToScan.any((d) => d.path == rootStorage.path)) {
-        directoriesToScan.add(rootStorage);
-      }
-
-      try {
-        final extDirs = await getExternalStorageDirectories();
-        if (extDirs != null) {
-          for (final dir in extDirs) {
-            final parts = dir.path.split('/Android/');
-            if (parts.isNotEmpty) {
-              final volumeRoot = Directory(parts[0]);
-              if (await volumeRoot.exists() &&
-                  !directoriesToScan.any((d) => d.path == volumeRoot.path)) {
-                directoriesToScan.add(volumeRoot);
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    } else {
-      final docDir = await getApplicationDocumentsDirectory();
-      directoriesToScan.add(docDir);
-      final downloadDir = await getDownloadsDirectory();
-      if (downloadDir != null) {
-        directoriesToScan.add(downloadDir);
-      }
+    final docDir = await getApplicationDocumentsDirectory();
+    directoriesToScan.add(docDir);
+    final downloadDir = await getDownloadsDirectory();
+    if (downloadDir != null) {
+      directoriesToScan.add(downloadDir);
     }
 
     await _ensureLibraryLoaded();
@@ -317,8 +244,6 @@ class PdfScannerService {
     List<String> importedPaths,
   ) {
     const skipFolders = {
-      'Android/data',
-      'Android/obb',
       '.thumbnails',
       '.cache',
       '.trash',

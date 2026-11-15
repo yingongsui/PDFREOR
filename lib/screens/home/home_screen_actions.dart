@@ -30,70 +30,12 @@ extension _HomeScreenActions on _HomeScreenState {
     }
   }
 
-  Future<void> _checkPermissionAndScan() async {
-    final granted = await _scannerService.hasStoragePermission();
-    if (!mounted) return;
-    _refresh(() {
-      _hasPermission = granted;
-    });
-
-    if (granted) {
-      _startScan();
-    } else {
-      // Prompt for permission automatically once
-      final requestResult = await _scannerService.requestStoragePermission();
-      if (!mounted) return;
-      _refresh(() {
-        _hasPermission = requestResult;
-      });
-      if (requestResult) {
-        _startScan();
-      }
-    }
-  }
-
-  Future<void> _requestPermissionManually() async {
-    final result = await _scannerService.requestStoragePermission();
-    if (!mounted) return;
-    _refresh(() {
-      _hasPermission = result;
-    });
-    if (result) {
-      _startScan();
-    } else {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Storage Permission Required'),
-            content: const Text(
-              'All-files access permission is required to discover and read PDF documents on your device. Please grant it in system settings.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _scannerService.openSettings();
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _startScan() async {
     if (_isLoading) return;
 
     _refresh(() {
       _isLoading = true;
-      _scanStatusText = 'Scanning device storage...';
+      _scanStatusText = 'Scanning local folders...';
     });
 
     try {

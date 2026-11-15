@@ -1,5 +1,5 @@
 name: pdfreor
-description: "A fast, responsive PDF reader and stylus annotation editor for Android tablets."
+description: "A fast, responsive PDF reader and annotation editor for desktop."
 publish_to: 'none'
 
 version: 3.0.0+3000
@@ -11,7 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  permission_handler: ^13.0.2
   path_provider: ^2.1.6
   file_picker: ^13.3.2
   intl: ^0.20.3

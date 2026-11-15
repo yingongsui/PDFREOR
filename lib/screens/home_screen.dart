@@ -40,7 +40,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<MapEntry<String, List<PdfFileInfo>>>? _cachedGroupedEntries;
 
   bool _isLoading = false;
-  bool _hasPermission = true;
   String _scanStatusText = '';
   bool _isViewerRouteOpen = false;
 
@@ -70,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }).catchError((_) {});
-    _checkPermissionAndScan();
+    _startScan();
   }
 
   Future<void> _handleIntentChannelCall(MethodCall call) async {
@@ -173,28 +172,6 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Column(
             children: [
-              // Permission Alert Banner (if not granted)
-              if (!_hasPermission)
-                MaterialBanner(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  backgroundColor: theme.colorScheme.errorContainer,
-                  leading: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
-                  content: Text(
-                    'Storage permission not granted. Some PDF files may not be discovered automatically.',
-                    style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 13),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: _importFiles,
-                      child: const Text('Pick Files'),
-                    ),
-                    FilledButton(
-                      onPressed: _requestPermissionManually,
-                      child: const Text('Grant Permission'),
-                    ),
-                  ],
-                ),
-
               // Open Tabs Banner
               if (PdfTabManager.instance.tabCount > 0)
                 Padding(

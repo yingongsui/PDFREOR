@@ -1,38 +1,6 @@
 part of 'pdf_tab_content.dart';
 
 extension _PdfTabContentActions on PdfTabContentState {
-  void _toggleEraserMode() {
-    final now = DateTime.now();
-    if (_lastButtonToggleTime != null &&
-        now.difference(_lastButtonToggleTime!).inMilliseconds <= 200) {
-      return;
-    }
-    _lastButtonToggleTime = now;
-    _refresh(() {
-      final nextIsEraser = !_isEraserActive;
-      _isHardwareButtonPressed = nextIsEraser;
-      _activeTool = nextIsEraser ? EditorTool.eraser : EditorTool.pen;
-    });
-    _drawingController.cancelActiveStroke();
-  }
-
-  Future<void> _handleStylusPlatformCall(MethodCall call) async {
-    if (!mounted) return;
-    _onStylusDetected();
-
-    if (call.method == 'onStylusButtonDown') {
-      _lastButtonDownTime = DateTime.now();
-      _toggleEraserMode();
-    } else if (call.method == 'onStylusButtonUp') {
-      final now = DateTime.now();
-      if (_lastButtonDownTime == null ||
-          now.difference(_lastButtonDownTime!).inMilliseconds > 300) {
-        _toggleEraserMode();
-      }
-      _lastButtonDownTime = null;
-    }
-  }
-
   Future<bool> _promptSaveIfDirty() async {
     if (_editingTextBoxId != null && mounted) {
       _refresh(() {
@@ -219,23 +187,7 @@ extension _PdfTabContentActions on PdfTabContentState {
     _saveSettings();
   }
 
-  void _onStylusDetected() {
-    if (!PlatformBridge.isMobile) return;
-    final shouldSwitchToPen =
-        !_isStylusDetected && _activeTool == EditorTool.select;
-    if (!_isStylusDetected || !_stylusOnlyMode || shouldSwitchToPen) {
-      _refresh(() {
-        _isStylusDetected = true;
-        _stylusOnlyMode = true;
-        if (shouldSwitchToPen) {
-          _activeTool = EditorTool.pen;
-        }
-      });
-    }
-  }
-
   void _onStylusDrawStarted() {
-    _onStylusDetected();
     if (_isEraserActive || _activeTool == EditorTool.eraser) return;
     if (_activeTool != EditorTool.pen && _activeTool != EditorTool.shape) {
       _refresh(() {
@@ -520,7 +472,7 @@ extension _PdfTabContentActions on PdfTabContentState {
       );
       if (savedUri == null) return;
 
-      if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS) {
+      if (!Platform.isMacOS) {
         await File.fromUri(savedUri).writeAsBytes(flattenedBytes, flush: true);
       }
 

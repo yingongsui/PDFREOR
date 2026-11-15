@@ -2,15 +2,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 
-/// Shared native channel bridge and OS capability helpers.
+/// Shared native channel bridge and desktop capability helpers.
 class PlatformBridge {
   PlatformBridge._();
 
   static const MethodChannel stylusChannel = MethodChannel('com.yin.pdfreor/stylus');
-
-  static bool get isMobile => Platform.isAndroid || Platform.isIOS;
-  static bool get isDesktop =>
-      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   static Future<bool> openUrl(String url) async {
     try {
