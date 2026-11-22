@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../services/editor_settings_service.dart';
+import '../../widgets/app_toast.dart';
 import 'settings_widgets.dart';
 
 class LatexOperatorsCard extends StatelessWidget {
@@ -304,11 +305,10 @@ class LatexOperatorsCard extends StatelessWidget {
                       editorSettings.copyWith(latexQuickOperators: kDefaultLatexOperators),
                     );
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Operators reset to default'),
-                          duration: Duration(seconds: 2),
-                        ),
+                      AppToast.show(
+                        context,
+                        'Operators reset to default',
+                        icon: Icons.restore_rounded,
                       );
                     }
                   },

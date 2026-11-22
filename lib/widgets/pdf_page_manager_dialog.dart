@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/pdf_file_info.dart';
+import 'app_toast.dart';
 import 'shared_pdf_thumbnail.dart';
 
 class PageManagerResult {
@@ -56,15 +57,20 @@ class _PdfPageManagerDialogState extends State<PdfPageManagerDialog> {
       _addedCount++;
       _currentPages.add(-_addedCount);
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Blank page added at the end')),
+    AppToast.show(
+      context,
+      'Blank page added at the end',
+      icon: Icons.note_add_outlined,
     );
   }
 
   void _deletePage(int index) {
     if (_currentPages.length <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot delete the last remaining page')),
+      AppToast.show(
+        context,
+        'Cannot delete the last remaining page',
+        icon: Icons.info_outline_rounded,
+        backgroundColor: Colors.red,
       );
       return;
     }

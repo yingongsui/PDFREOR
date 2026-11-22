@@ -93,27 +93,14 @@ extension _PdfTabContentActions on PdfTabContentState {
     Color? backgroundColor,
     IconData? icon,
     Duration duration = const Duration(seconds: 2),
-    bool floating = false,
   }) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: icon != null
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Text(message),
-                ],
-              )
-            : Text(message),
-        backgroundColor: backgroundColor,
-        duration: duration,
-        behavior: floating ? SnackBarBehavior.floating : null,
-      ),
+    AppToast.show(
+      context,
+      message,
+      icon: icon,
+      backgroundColor: backgroundColor,
+      duration: duration,
     );
   }
 
@@ -352,7 +339,6 @@ extension _PdfTabContentActions on PdfTabContentState {
               : 'Saved as Standard (Flattened)!',
           backgroundColor: Colors.green,
           icon: Icons.check_circle_rounded,
-          floating: true,
         );
       }
       return true;
@@ -361,7 +347,7 @@ extension _PdfTabContentActions on PdfTabContentState {
         _showViewerSnackBar(
           'Failed to save file: $e',
           backgroundColor: Colors.red,
-          floating: true,
+          icon: Icons.error_outline_rounded,
         );
       }
       return false;
@@ -475,13 +461,12 @@ extension _PdfTabContentActions on PdfTabContentState {
         'Standard flattened PDF exported!',
         backgroundColor: Colors.green,
         icon: Icons.check_circle_rounded,
-        floating: true,
       );
     } catch (e) {
       _showViewerSnackBar(
         'Failed to export flattened PDF: $e',
         backgroundColor: Colors.red,
-        floating: true,
+        icon: Icons.error_outline_rounded,
       );
     } finally {
       _isSaving = false;

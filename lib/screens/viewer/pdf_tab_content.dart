@@ -19,6 +19,7 @@ import '../../services/pdf_tab_manager.dart';
 import '../../services/pdf_thumbnail_service.dart';
 import '../../services/platform_bridge.dart';
 import '../../services/reading_progress_service.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/pass_through_stack.dart';
 import '../../widgets/pdf_annotation_property_bar.dart';
 import '../../widgets/pdf_editor_canvas.dart';

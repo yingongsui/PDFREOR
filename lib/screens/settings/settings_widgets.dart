@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/pdf_thumbnail_service.dart';
+import '../../widgets/app_toast.dart';
 
 class SettingsSectionHeader extends StatelessWidget {
   final String title;
@@ -179,11 +180,10 @@ void showClearThumbnailCacheDialog(BuildContext hostContext) {
             Navigator.pop(dialogContext);
             await PdfThumbnailService.instance.clearAllCache();
             if (!hostContext.mounted) return;
-            ScaffoldMessenger.of(hostContext).showSnackBar(
-              const SnackBar(
-                content: Text('Thumbnail cache cleared successfully'),
-                duration: Duration(seconds: 2),
-              ),
+            AppToast.show(
+              hostContext,
+              'Thumbnail cache cleared successfully',
+              icon: Icons.check_circle_outline_rounded,
             );
           },
           child: const Text('Clear'),

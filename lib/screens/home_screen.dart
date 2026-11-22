@@ -11,6 +11,7 @@ import '../services/pdf_tab_manager.dart';
 import '../services/pdf_thumbnail_service.dart';
 import '../services/platform_bridge.dart';
 import '../services/reading_progress_service.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/pdf_list_tile.dart';
 import '../widgets/pdf_thumbnail_card.dart';
 import 'home/home_dialogs.dart';

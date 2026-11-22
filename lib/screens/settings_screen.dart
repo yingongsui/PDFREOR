@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/editor_settings_service.dart';
 import '../services/pdf_scanner_service.dart';
 import '../services/platform_bridge.dart';
+import '../widgets/app_toast.dart';
 import 'home/home_dialogs.dart';
 import 'settings/latex_operators_section.dart';
 import 'settings/settings_widgets.dart';
@@ -455,11 +456,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _copyGitHubLink(BuildContext context) async {
     await Clipboard.setData(const ClipboardData(text: _githubUrl));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('GitHub link copied to clipboard'),
-        duration: Duration(seconds: 2),
-      ),
+    AppToast.show(
+      context,
+      'GitHub link copied to clipboard',
+      icon: Icons.check_circle_outline_rounded,
     );
   }
 

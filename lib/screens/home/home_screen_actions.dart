@@ -4,20 +4,15 @@ extension _HomeScreenActions on _HomeScreenState {
   void _showHomeSnackBar(
     String message, {
     Color? backgroundColor,
-    Duration duration = const Duration(seconds: 4),
+    Duration duration = const Duration(seconds: 3),
     bool replaceCurrent = false,
   }) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    if (replaceCurrent) {
-      messenger.hideCurrentSnackBar();
-    }
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-        duration: duration,
-      ),
+    AppToast.show(
+      context,
+      message,
+      backgroundColor: backgroundColor,
+      duration: duration,
     );
   }
 
@@ -647,16 +642,13 @@ extension _HomeScreenActions on _HomeScreenState {
     await _scannerService.setFolderHidden(folderPath, true);
 
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Hidden "$folderName"'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () => _unhideFolder(folderPath),
-        ),
-      ),
+    AppToast.show(
+      context,
+      'Hidden "$folderName"',
+      icon: Icons.visibility_off_outlined,
+      duration: const Duration(seconds: 4),
+      actionLabel: 'Undo',
+      onAction: () => _unhideFolder(folderPath),
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import '../../models/pdf_file_info.dart';
+import '../../widgets/app_toast.dart';
 
 String folderDisplayName(String folderPath) {
   final baseName = p.basename(folderPath);
@@ -236,8 +237,10 @@ void showPdfFileDetailsDialog(BuildContext context, PdfFileInfo file) {
         TextButton.icon(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: file.path));
-            ScaffoldMessenger.of(dialogContext).showSnackBar(
-              const SnackBar(content: Text('Path copied to clipboard')),
+            AppToast.show(
+              dialogContext,
+              'Path copied to clipboard',
+              icon: Icons.check_circle_outline_rounded,
             );
           },
           icon: const Icon(Icons.copy, size: 16),
