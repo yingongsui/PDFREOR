@@ -1,10 +1,10 @@
 name: Build macOS (desktop)
 
 on:
-  push:
-    branches:
-      - desktop
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build_macos:
@@ -35,7 +35,8 @@ jobs:
 
       - name: Package macOS DMG
         run: |
-          rm -rf dist/dmg_root
+          VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          rm -rf dist dist/dmg_root
           mkdir -p dist/dmg_root
           ditto build/macos/Build/Products/Release/PDFREOR.app dist/dmg_root/PDFREOR.app
           ln -s /Applications dist/dmg_root/Applications
@@ -44,12 +45,28 @@ jobs:
             -srcfolder dist/dmg_root \
             -ov \
             -format UDZO \
-            dist/PDFREOR-macos.dmg
+            "dist/PDFREOR-${VERSION}-macos.dmg"
           rm -rf dist/dmg_root
 
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: PDFREOR-macos
-          path: dist/PDFREOR-macos.dmg
-          retention-days: 14
+      - name: Publish macOS DMG to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          TAG="desktop-v${VERSION}"
+          TITLE="PDFREOR-DESKTOP v${VERSION}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "${{ github.sha }}" \
+              --title "$TITLE" \
+              --notes "Desktop builds for PDFREOR v${VERSION}." || true
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" dist/*.dmg --clobber; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1

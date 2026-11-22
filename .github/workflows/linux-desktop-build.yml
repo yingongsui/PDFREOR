@@ -1,10 +1,10 @@
 name: Build Ubuntu Linux (desktop)
 
 on:
-  push:
-    branches:
-      - desktop
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build_linux:
@@ -58,7 +58,7 @@ jobs:
           mkdir -p dist
 
           # Portable archive
-          tar -C "$BUNDLE_DIR" -czf "dist/PDFREOR-ubuntu-${ARCH}.tar.gz" .
+          tar -C "$BUNDLE_DIR" -czf "dist/PDFREOR-${VERSION}-ubuntu-${ARCH}.tar.gz" .
 
           # Ubuntu .deb package
           PKG_ROOT="dist/deb_root"
@@ -106,14 +106,28 @@ jobs:
           Description: A fast, responsive PDF reader and annotation editor for desktop.
           EOF
 
-          dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/PDFREOR-ubuntu-${ARCH}.deb"
+          dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/PDFREOR-${VERSION}-ubuntu-${ARCH}.deb"
           rm -rf "${PKG_ROOT}"
 
-      - name: Upload Ubuntu artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: PDFREOR-ubuntu
-          path: |
-            dist/PDFREOR-ubuntu-*.deb
-            dist/PDFREOR-ubuntu-*.tar.gz
-          retention-days: 14
+      - name: Publish Ubuntu packages to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          TAG="desktop-v${VERSION}"
+          TITLE="PDFREOR-DESKTOP v${VERSION}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "${{ github.sha }}" \
+              --title "$TITLE" \
+              --notes "Desktop builds for PDFREOR v${VERSION}." || true
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" dist/*.deb dist/*.tar.gz --clobber; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
