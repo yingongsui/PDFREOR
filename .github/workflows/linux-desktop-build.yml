@@ -1,6 +1,11 @@
 name: Build Ubuntu Linux (desktop)
 
 on:
+  push:
+    branches:
+      - desktop
+    tags:
+      - 'desktop-v*'
   workflow_dispatch:
 
 permissions:
