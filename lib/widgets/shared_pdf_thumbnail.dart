@@ -150,6 +150,26 @@ class _SharedPdfThumbnailState extends State<SharedPdfThumbnail> {
   }
 }
 
+const Color kPdfOpenedAccentColor = Color(0xFF1E90FF);
+
+BorderSide pdfItemCardBorderSide(
+  ThemeData theme, {
+  required bool isSelected,
+  required bool isOpen,
+  required double activeWidth,
+  double unselectedAlpha = 0.5,
+}) {
+  if (isSelected) {
+    return BorderSide(color: theme.colorScheme.primary, width: activeWidth);
+  }
+  if (isOpen) {
+    return BorderSide(color: kPdfOpenedAccentColor, width: activeWidth);
+  }
+  return BorderSide(
+    color: theme.colorScheme.outlineVariant.withValues(alpha: unselectedAlpha),
+  );
+}
+
 class PdfOpenedBadge extends StatelessWidget {
   final bool compact;
   final bool withShadow;
@@ -160,8 +180,6 @@ class PdfOpenedBadge extends StatelessWidget {
     this.withShadow = false,
   });
 
-  static const Color _dodgerBlue = Color(0xFF1E90FF);
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -170,12 +188,12 @@ class PdfOpenedBadge extends StatelessWidget {
         vertical: compact ? 1.5 : 2,
       ),
       decoration: BoxDecoration(
-        color: _dodgerBlue,
+        color: kPdfOpenedAccentColor,
         borderRadius: BorderRadius.circular(4),
         boxShadow: withShadow
             ? [
                 BoxShadow(
-                  color: _dodgerBlue.withValues(alpha: 0.4),
+                  color: kPdfOpenedAccentColor.withValues(alpha: 0.4),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),

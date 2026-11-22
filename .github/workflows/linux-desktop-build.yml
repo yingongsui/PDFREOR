@@ -50,7 +50,7 @@ jobs:
       - name: Build Linux release bundle
         run: flutter build linux --release
 
-      - name: Package Ubuntu .deb and .tar.gz
+      - name: Package Ubuntu .deb
         run: |
           VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
           ARCH=$(dpkg --print-architecture)
@@ -61,9 +61,6 @@ jobs:
 
           rm -rf dist
           mkdir -p dist
-
-          # Portable archive
-          tar -C "$BUNDLE_DIR" -czf "dist/PDFREOR-${VERSION}-ubuntu-${ARCH}.tar.gz" .
 
           # Ubuntu .deb package
           PKG_ROOT="dist/deb_root"
@@ -114,7 +111,7 @@ jobs:
           dpkg-deb --build --root-owner-group "${PKG_ROOT}" "dist/PDFREOR-${VERSION}-ubuntu-${ARCH}.deb"
           rm -rf "${PKG_ROOT}"
 
-      - name: Publish Ubuntu packages to GitHub Release
+      - name: Publish Ubuntu .deb to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -130,7 +127,7 @@ jobs:
           fi
 
           for attempt in 1 2 3; do
-            if gh release upload "$TAG" dist/*.deb dist/*.tar.gz --clobber; then
+            if gh release upload "$TAG" dist/*.deb --clobber; then
               exit 0
             fi
             sleep 3

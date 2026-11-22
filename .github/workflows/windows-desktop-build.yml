@@ -1,11 +1,6 @@
 name: Build Windows (desktop)
 
 on:
-  push:
-    branches:
-      - desktop
-    tags:
-      - 'desktop-v*'
   workflow_dispatch:
     inputs:
       package_format:

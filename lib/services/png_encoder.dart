@@ -210,44 +210,30 @@ class PngEncoder {
       }
     } else {
       pngColorType = 6;
-      final rowStride = 1 + cropW * 4;
-      scanlines = Uint8List(cropH * rowStride);
-      int dst = 0;
-      for (int y = cropTop; y <= cropBottom; y++) {
-        scanlines[dst++] = 0;
-        final srcRow = y * width;
-        for (int x = cropLeft; x <= cropRight; x++) {
-          final idx = (srcRow + x) << 2;
-          final rawA = rawRgba[idx + 3];
-          final qA = ((rawA + 8) ~/ 17) * 17;
-          if (qA == 0) {
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-          } else {
-            scanlines[dst++] = rawRgba[idx];
-            scanlines[dst++] = rawRgba[idx + 1];
-            scanlines[dst++] = rawRgba[idx + 2];
-            scanlines[dst++] = qA;
-          }
-        }
-      }
+      scanlines = _encodeRgbaAlphaScanlines(
+        rawRgba: rawRgba,
+        width: width,
+        cropLeft: cropLeft,
+        cropTop: cropTop,
+        cropRight: cropRight,
+        cropBottom: cropBottom,
+        cropW: cropW,
+        cropH: cropH,
+        quantizeAlpha: (rawA) => ((rawA + 8) ~/ 17) * 17,
+      );
     }
 
-    final compressedIdat = ZLibCodec(level: 9).encode(scanlines);
-    final pngBytes = wrapPng(cropW, cropH, pngColorType, compressedIdat);
-
-    final scaleToLogicalX = logicalWidth / width;
-    final scaleToLogicalY = logicalHeight / height;
-
-    return EncodedPngPayload(
-      bytes: pngBytes,
-      logicalWidth: cropW * scaleToLogicalX,
-      logicalHeight: cropH * scaleToLogicalY,
-      offsetX: cropLeft * scaleToLogicalX,
-      offsetY: cropTop * scaleToLogicalY,
-      colorType: pngColorType,
+    return _finalizePngPayload(
+      scanlines: scanlines,
+      width: width,
+      height: height,
+      cropLeft: cropLeft,
+      cropTop: cropTop,
+      cropW: cropW,
+      cropH: cropH,
+      logicalWidth: logicalWidth,
+      logicalHeight: logicalHeight,
+      pngColorType: pngColorType,
     );
   }
 
@@ -378,36 +364,81 @@ class PngEncoder {
       );
     } else {
       pngColorType = 6;
-      final rowStride = 1 + cropW * 4;
-      scanlines = Uint8List(cropH * rowStride);
-      int dst = 0;
-      for (int y = cropTop; y <= cropBottom; y++) {
-        scanlines[dst++] = 0;
-        final srcRow = y * width;
-        for (int x = cropLeft; x <= cropRight; x++) {
-          final idx = (srcRow + x) << 2;
-          final rawA = rawStraightRgba[idx + 3];
-          final int qA = rawA <= 4
-              ? 0
-              : (rawA >= 251 ? 255 : ((rawA + 4) ~/ 8) * 8);
-          if (qA == 0) {
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-            scanlines[dst++] = 0;
-          } else {
-            scanlines[dst++] = rawStraightRgba[idx];
-            scanlines[dst++] = rawStraightRgba[idx + 1];
-            scanlines[dst++] = rawStraightRgba[idx + 2];
-            scanlines[dst++] = qA;
-          }
+      scanlines = _encodeRgbaAlphaScanlines(
+        rawRgba: rawStraightRgba,
+        width: width,
+        cropLeft: cropLeft,
+        cropTop: cropTop,
+        cropRight: cropRight,
+        cropBottom: cropBottom,
+        cropW: cropW,
+        cropH: cropH,
+        quantizeAlpha: (rawA) =>
+            rawA <= 4 ? 0 : (rawA >= 251 ? 255 : ((rawA + 4) ~/ 8) * 8),
+      );
+    }
+
+    return _finalizePngPayload(
+      scanlines: scanlines,
+      width: width,
+      height: height,
+      cropLeft: cropLeft,
+      cropTop: cropTop,
+      cropW: cropW,
+      cropH: cropH,
+      logicalWidth: logicalWidth,
+      logicalHeight: logicalHeight,
+      pngColorType: pngColorType,
+    );
+  }
+
+  static Uint8List _encodeRgbaAlphaScanlines({
+    required Uint8List rawRgba,
+    required int width,
+    required int cropLeft,
+    required int cropTop,
+    required int cropRight,
+    required int cropBottom,
+    required int cropW,
+    required int cropH,
+    required int Function(int rawA) quantizeAlpha,
+  }) {
+    final rowStride = 1 + cropW * 4;
+    final scanlines = Uint8List(cropH * rowStride);
+    int dst = 0;
+    for (int y = cropTop; y <= cropBottom; y++) {
+      scanlines[dst++] = 0;
+      final srcRow = y * width;
+      for (int x = cropLeft; x <= cropRight; x++) {
+        final idx = (srcRow + x) << 2;
+        final qA = quantizeAlpha(rawRgba[idx + 3]);
+        if (qA == 0) {
+          dst += 4; // Uint8List is zero-initialized
+        } else {
+          scanlines[dst++] = rawRgba[idx];
+          scanlines[dst++] = rawRgba[idx + 1];
+          scanlines[dst++] = rawRgba[idx + 2];
+          scanlines[dst++] = qA;
         }
       }
     }
+    return scanlines;
+  }
 
+  static EncodedPngPayload _finalizePngPayload({
+    required Uint8List scanlines,
+    required int width,
+    required int height,
+    required int cropLeft,
+    required int cropTop,
+    required int cropW,
+    required int cropH,
+    required double logicalWidth,
+    required double logicalHeight,
+    required int pngColorType,
+  }) {
     final compressedIdat = ZLibCodec(level: 9).encode(scanlines);
     final pngBytes = wrapPng(cropW, cropH, pngColorType, compressedIdat);
-
     final scaleToLogicalX = logicalWidth / width;
     final scaleToLogicalY = logicalHeight / height;
 

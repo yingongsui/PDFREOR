@@ -27,22 +27,21 @@ class PdfThumbnailCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dateFormat = _dateFormat;
-    const dodgerBlue = Color(0xFF1E90FF);
 
     return Card(
       elevation: isOpen ? 4 : 2,
       shadowColor: isOpen
-          ? dodgerBlue.withValues(alpha: 0.3)
+          ? kPdfOpenedAccentColor.withValues(alpha: 0.3)
           : theme.colorScheme.shadow.withValues(alpha: 0.15),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: isSelected
-            ? BorderSide(color: theme.colorScheme.primary, width: 2.5)
-            : isOpen
-                ? const BorderSide(color: dodgerBlue, width: 2.5)
-                : BorderSide(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-                  ),
+        side: pdfItemCardBorderSide(
+          theme,
+          isSelected: isSelected,
+          isOpen: isOpen,
+          activeWidth: 2.5,
+          unselectedAlpha: 0.5,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(

@@ -74,6 +74,29 @@ class FloatingToolbarPopups {
     );
   }
 
+  static Widget _buildPopupCard({
+    required ThemeData theme,
+    required double width,
+    required EdgeInsetsGeometry padding,
+    CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.start,
+    required Widget child,
+  }) {
+    return Card(
+      elevation: 10,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: theme.colorScheme.surface,
+      child: Container(
+        width: width,
+        padding: padding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: crossAxisAlignment,
+          children: [child],
+        ),
+      ),
+    );
+  }
+
   static void showColorPicker({
     required BuildContext hostContext,
     required BuildContext buttonContext,
@@ -83,41 +106,37 @@ class FloatingToolbarPopups {
   }) {
     showAnchoredPopup(hostContext, buttonContext, (dialogContext) {
       final theme = Theme.of(hostContext);
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 220,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPopupHeader(theme, Icons.palette_outlined, 'Color Palette'),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: palette.map((color) {
-                  final isSelected = activeColor.toARGB32() == color.toARGB32();
-                  return EditorColorDot(
-                    color: color,
-                    isSelected: isSelected,
-                    size: 32,
-                    selectedBorderWidth: 3,
-                    shadowBlurRadius: 6,
-                    shadowSpreadRadius: 2,
-                    checkIconSize: 18,
-                    onTap: () {
-                      onColorSelected(color);
-                      Navigator.pop(dialogContext);
-                    },
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
+      return _buildPopupCard(
+        theme: theme,
+        width: 220,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPopupHeader(theme, Icons.palette_outlined, 'Color Palette'),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: palette.map((color) {
+                final isSelected = activeColor.toARGB32() == color.toARGB32();
+                return EditorColorDot(
+                  color: color,
+                  isSelected: isSelected,
+                  size: 32,
+                  selectedBorderWidth: 3,
+                  shadowBlurRadius: 6,
+                  shadowSpreadRadius: 2,
+                  checkIconSize: 18,
+                  onTap: () {
+                    onColorSelected(color);
+                    Navigator.pop(dialogContext);
+                  },
+                );
+              }).toList(),
+            ),
+          ],
         ),
       );
     });
@@ -132,72 +151,68 @@ class FloatingToolbarPopups {
     showAnchoredPopup(hostContext, buttonContext, (dialogContext) {
       final theme = Theme.of(hostContext);
       const widths = [1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0];
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 210,
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPopupHeader(theme, Icons.line_weight_rounded, 'Stroke Width'),
-              const SizedBox(height: 12),
-              Column(
-                children: widths.map((width) {
-                  final isSelected = (activeStrokeWidth - width).abs() < 0.1;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () {
-                      onStrokeWidthSelected(width);
-                      Navigator.pop(dialogContext);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
-                            : null,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 52,
-                            child: Text(
-                              '${width.toStringAsFixed(1)} pt',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                color: isSelected ? theme.colorScheme.primary : null,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              height: width,
-                              decoration: BoxDecoration(
-                                color: isSelected ? theme.colorScheme.primary : Colors.grey.shade600,
-                                borderRadius: BorderRadius.circular(width / 2),
-                              ),
-                            ),
-                          ),
-                          if (isSelected) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.check_rounded, size: 16, color: theme.colorScheme.primary),
-                          ],
-                        ],
-                      ),
+      return _buildPopupCard(
+        theme: theme,
+        width: 210,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPopupHeader(theme, Icons.line_weight_rounded, 'Stroke Width'),
+            const SizedBox(height: 12),
+            Column(
+              children: widths.map((width) {
+                final isSelected = (activeStrokeWidth - width).abs() < 0.1;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    onStrokeWidthSelected(width);
+                    Navigator.pop(dialogContext);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                    margin: const EdgeInsets.symmetric(vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
+                          : null,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 52,
+                          child: Text(
+                            '${width.toStringAsFixed(1)} pt',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? theme.colorScheme.primary : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            height: width,
+                            decoration: BoxDecoration(
+                              color: isSelected ? theme.colorScheme.primary : Colors.grey.shade600,
+                              borderRadius: BorderRadius.circular(width / 2),
+                            ),
+                          ),
+                        ),
+                        if (isSelected) ...[
+                          const SizedBox(width: 8),
+                          Icon(Icons.check_rounded, size: 16, color: theme.colorScheme.primary),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
       );
     });
@@ -212,39 +227,35 @@ class FloatingToolbarPopups {
     showAnchoredPopup(hostContext, buttonContext, (dialogContext) {
       final theme = Theme.of(hostContext);
       const fontSizes = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0];
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPopupHeader(theme, Icons.format_size_rounded, 'Font Size'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: fontSizes.map((size) {
-                  final isSelected = (activeFontSize - size).abs() < 0.1;
-                  return ChoiceChip(
-                    label: Text('${size.toInt()} pt'),
-                    selected: isSelected,
-                    visualDensity: VisualDensity.compact,
-                    onSelected: (selected) {
-                      if (selected) {
-                        onFontSizeSelected?.call(size);
-                        Navigator.pop(dialogContext);
-                      }
-                    },
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
+      return _buildPopupCard(
+        theme: theme,
+        width: 200,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPopupHeader(theme, Icons.format_size_rounded, 'Font Size'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: fontSizes.map((size) {
+                final isSelected = (activeFontSize - size).abs() < 0.1;
+                return ChoiceChip(
+                  label: Text('${size.toInt()} pt'),
+                  selected: isSelected,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (selected) {
+                    if (selected) {
+                      onFontSizeSelected?.call(size);
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                );
+              }).toList(),
+            ),
+          ],
         ),
       );
     });
@@ -260,32 +271,29 @@ class FloatingToolbarPopups {
   }) {
     showAnchoredPopup(hostContext, buttonContext, (dialogContext) {
       final theme = Theme.of(hostContext);
-      return Card(
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: theme.colorScheme.surface,
-        child: Container(
-          width: 216,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: _buildPopupHeader(theme, Icons.category_outlined, 'Select Shape'),
+      return _buildPopupCard(
+        theme: theme,
+        width: 216,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _buildPopupHeader(theme, Icons.category_outlined, 'Select Shape'),
+            ),
+            const Divider(height: 1),
+            for (final type in kOrderedShapeTypes)
+              _buildShapeOption(
+                dialogContext,
+                type: type,
+                activeTool: activeTool,
+                activeShape: activeShape,
+                onToolSelected: onToolSelected,
+                onShapeSelected: onShapeSelected,
               ),
-              const Divider(height: 1),
-              for (final type in kOrderedShapeTypes)
-                _buildShapeOption(
-                  dialogContext,
-                  type: type,
-                  activeTool: activeTool,
-                  activeShape: activeShape,
-                  onToolSelected: onToolSelected,
-                  onShapeSelected: onShapeSelected,
-                ),
-            ],
-          ),
+          ],
         ),
       );
     });

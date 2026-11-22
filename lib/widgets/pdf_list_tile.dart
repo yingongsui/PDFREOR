@@ -27,20 +27,19 @@ class PdfListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dateFormat = _dateFormat;
-    const dodgerBlue = Color(0xFF1E90FF);
 
     return Card(
       elevation: isOpen ? 2 : 0,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: isSelected
-            ? BorderSide(color: theme.colorScheme.primary, width: 2.2)
-            : isOpen
-                ? const BorderSide(color: dodgerBlue, width: 2.2)
-                : BorderSide(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-                  ),
+        side: pdfItemCardBorderSide(
+          theme,
+          isSelected: isSelected,
+          isOpen: isOpen,
+          activeWidth: 2.2,
+          unselectedAlpha: 0.4,
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -60,7 +59,7 @@ class PdfListTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: isOpen
-                        ? dodgerBlue.withValues(alpha: 0.6)
+                        ? kPdfOpenedAccentColor.withValues(alpha: 0.6)
                         : theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
                 ),

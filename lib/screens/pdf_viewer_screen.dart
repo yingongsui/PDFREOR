@@ -7,6 +7,7 @@ import '../models/pdf_file_info.dart';
 import '../services/pdf_tab_manager.dart';
 import '../services/reading_progress_service.dart';
 import '../widgets/pdf_thumbnails_sidebar.dart';
+import '../widgets/shared_pdf_thumbnail.dart';
 import 'viewer/pdf_tab_content.dart';
 import 'viewer/pdf_viewer_tab_bar.dart';
 
@@ -429,34 +430,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
                       ),
                   ];
                 },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF1E90FF),
-                      width: 1.4,
+                child: _buildAppBarPill(
+                  backgroundColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.8),
+                  icon: Icons.tab_rounded,
+                  label: Text(
+                    '${tabs.length}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: kPdfOpenedAccentColor,
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.tab_rounded,
-                        size: 16,
-                        color: Color(0xFF1E90FF),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '${tabs.length}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E90FF),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ),
@@ -466,39 +449,22 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
               child: InkWell(
                 onTap: _openThumbnailsSidebar,
                 borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF1E90FF),
-                      width: 1.4,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.auto_stories_outlined,
-                        size: 16,
-                        color: Color(0xFF1E90FF),
-                      ),
-                      const SizedBox(width: 6),
-                      ValueListenableBuilder<(int, int)>(
-                        valueListenable: _pageInfoNotifier,
-                        builder: (context, info, _) {
-                          return Text(
-                            '${info.$1} / ${info.$2}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E90FF),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                child: _buildAppBarPill(
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                  icon: Icons.auto_stories_outlined,
+                  iconSpacing: 6,
+                  label: ValueListenableBuilder<(int, int)>(
+                    valueListenable: _pageInfoNotifier,
+                    builder: (context, info, _) {
+                      return Text(
+                        '${info.$1} / ${info.$2}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: kPdfOpenedAccentColor,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -544,4 +510,27 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> with WidgetsBindingOb
     );
   }
 
+  Widget _buildAppBarPill({
+    required Color backgroundColor,
+    required IconData icon,
+    required Widget label,
+    double iconSpacing = 5,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: kPdfOpenedAccentColor, width: 1.4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: kPdfOpenedAccentColor),
+          SizedBox(width: iconSpacing),
+          label,
+        ],
+      ),
+    );
+  }
 }

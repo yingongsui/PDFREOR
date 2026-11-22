@@ -20,11 +20,11 @@ void main() {
     expect(find.text('Local File Access'), findsNothing);
 
     await tester.scrollUntilVisible(
-      find.text('Version 1.2.0'),
+      find.text('Version 1.3.0'),
       300,
       scrollable: find.byType(Scrollable),
     );
-    expect(find.text('Version 1.2.0'), findsOneWidget);
+    expect(find.text('Version 1.3.0'), findsOneWidget);
   });
 
   testWidgets('SettingsScreen updates Live Font Preview fontFamily on selection', (
