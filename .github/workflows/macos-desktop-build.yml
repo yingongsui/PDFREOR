@@ -35,8 +35,15 @@ jobs:
       - name: Run unit and widget tests
         run: flutter test
 
-      - name: Build macOS release app
-        run: flutter build macos --release
+      - name: Build macOS release app (Apple Silicon arm64)
+        run: |
+          flutter build macos --release
+          ARCHS=$(lipo -archs build/macos/Build/Products/Release/PDFREOR.app/Contents/MacOS/PDFREOR)
+          echo "Built macOS architectures: ${ARCHS}"
+          if [ "$ARCHS" != "arm64" ]; then
+            echo "Expected arm64-only binary, got: ${ARCHS}"
+            exit 1
+          fi
 
       - name: Package macOS DMG
         run: |
@@ -50,7 +57,7 @@ jobs:
             -srcfolder dist/dmg_root \
             -ov \
             -format UDZO \
-            "dist/PDFREOR-${VERSION}-macos.dmg"
+            "dist/PDFREOR-${VERSION}-macos-arm64.dmg"
           rm -rf dist/dmg_root
 
       - name: Publish macOS DMG to GitHub Release

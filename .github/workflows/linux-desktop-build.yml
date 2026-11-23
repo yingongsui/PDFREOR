@@ -54,10 +54,14 @@ jobs:
         run: |
           VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
           ARCH=$(dpkg --print-architecture)
-          BUNDLE_DIR="build/linux/x64/release/bundle"
-          if [ ! -d "$BUNDLE_DIR" ]; then
-            BUNDLE_DIR="build/linux/arm64/release/bundle"
-          fi
+          case "$ARCH" in
+            amd64) BUNDLE_DIR="build/linux/x64/release/bundle" ;;
+            arm64) BUNDLE_DIR="build/linux/arm64/release/bundle" ;;
+            *)
+              echo "Unsupported 32-bit/non-64-bit Linux architecture: ${ARCH}"
+              exit 1
+              ;;
+          esac
 
           rm -rf dist
           mkdir -p dist
