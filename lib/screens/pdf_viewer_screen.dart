@@ -1,7 +1,7 @@
 import 'dart:collection';
 import 'dart:io';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import '../models/pdf_file_info.dart';
 import '../services/pdf_tab_manager.dart';

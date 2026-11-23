@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/pdf_file_info.dart';
 import 'app_toast.dart';
 import 'shared_pdf_thumbnail.dart';

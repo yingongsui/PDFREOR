@@ -274,10 +274,27 @@ class PdfScannerService {
   /// Let user pick a folder to scan.
   Future<String?> pickDirectory() async {
     try {
-      return await FilePicker.getDirectoryPath();
+      final uri = await FilePicker.pickDirectory();
+      return directoryUriToPath(uri);
     } catch (_) {
       return null;
     }
+  }
+
+  /// Converts a file URI returned by [FilePicker.pickDirectory] into a normalized directory path.
+  static String? directoryUriToPath(Uri? uri, {bool? isWindows}) {
+    if (uri == null || (uri.scheme.isNotEmpty && uri.scheme != 'file')) {
+      return null;
+    }
+    final useWindows = isWindows ?? Platform.isWindows;
+    var path = uri.toFilePath(windows: useWindows);
+    final sep = useWindows ? r'\' : '/';
+    if (path.length > 1 && path.endsWith(sep)) {
+      if (!(useWindows && RegExp(r'^[A-Za-z]:\\$').hasMatch(path))) {
+        path = path.substring(0, path.length - 1);
+      }
+    }
+    return path.isEmpty ? null : path;
   }
 
   /// Pure isolate-safe recursive scanner using an O(1) `Queue<Directory>`.

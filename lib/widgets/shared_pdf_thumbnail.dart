@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../services/pdf_thumbnail_service.dart';
 
 /// Unified async PDF thumbnail widget supporting both document covers

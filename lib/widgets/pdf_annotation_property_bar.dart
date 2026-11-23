@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/editor_models.dart';
 import 'pdf_canvas_items.dart';
 import 'toolbars/editor_palette.dart';

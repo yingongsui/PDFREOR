@@ -3,7 +3,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import '../controllers/drawing_controller.dart';
 import 'annotation_persistence_codec.dart';

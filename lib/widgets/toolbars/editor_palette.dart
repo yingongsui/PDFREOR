@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Highlight / text annotation palette shared across editor toolbars.
 const List<Color> kEditorAnnotationPalette = [

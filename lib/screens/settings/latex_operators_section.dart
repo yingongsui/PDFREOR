@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../services/editor_settings_service.dart';
 import '../../widgets/app_toast.dart';

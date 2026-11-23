@@ -22,6 +22,7 @@ dependencies:
   pdfrx: ^2.4.8
   flutter_math_fork: ^0.7.4
 
+  material_ui: any
 dev_dependencies:
   flutter_test:
     sdk: flutter
